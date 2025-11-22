@@ -27,11 +27,15 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-    // Accept only image files
-    if (file.mimetype.startsWith('image/')) {
+    // Accept only image files with specific MIME types
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    
+    if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(ext)) {
         cb(null, true);
     } else {
-        cb(new Error('Only image files are allowed!'), false);
+        cb(new Error('Only image files (JPEG, PNG, GIF, WebP) are allowed!'), false);
     }
 };
 
@@ -42,6 +46,8 @@ const upload = multer({
 });
 
 // Store photo metadata (in production, use a database)
+// WARNING: This in-memory storage will be lost when the server restarts.
+// For production use, implement proper persistence with a database (e.g., MongoDB, PostgreSQL)
 const photoMetadata = {};
 
 // Serve static files
