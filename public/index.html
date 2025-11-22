@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIS Social Night - Photobooth</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📸 DIS Social Night</h1>
+            <p class="subtitle">Photobooth - Upload & Share Your Memories</p>
+        </header>
+
+        <div id="upload-section" class="section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📤</div>
+                <h2>Upload Your Photo</h2>
+                <p>Click to select a photo or drag and drop here</p>
+                <p class="file-info">Supported formats: JPEG, PNG (Max 10MB)</p>
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                    Choose Photo
+                </button>
+            </div>
+
+            <div id="preview-section" style="display: none;">
+                <h3>Preview</h3>
+                <div class="preview-container">
+                    <img id="previewImage" src="" alt="Preview">
+                </div>
+                <div class="preview-actions">
+                    <button class="btn-primary" id="uploadBtn">Upload Photo</button>
+                    <button class="btn-secondary" id="cancelBtn">Cancel</button>
+                </div>
+            </div>
+
+            <div id="loading-section" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p>Uploading your photo...</p>
+            </div>
+        </div>
+
+        <div id="result-section" class="section" style="display: none;">
+            <div class="success-message">
+                <div class="success-icon">✅</div>
+                <h2>Photo Uploaded Successfully!</h2>
+                <p>Scan the QR code below to view and download your photo</p>
+            </div>
+
+            <div class="qr-container">
+                <img id="qrCode" src="" alt="QR Code">
+            </div>
+
+            <div class="result-info">
+                <p><strong>Direct Link:</strong></p>
+                <div class="link-container">
+                    <input type="text" id="photoLink" readonly>
+                    <button class="btn-copy" onclick="copyLink()">Copy</button>
+                </div>
+            </div>
+
+            <div class="result-actions">
+                <button class="btn-primary" onclick="resetForm()">Upload Another Photo</button>
+                <a id="viewPhotoLink" href="" target="_blank" class="btn-secondary">View Photo</a>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Made with ❤️ for DIS Social Night</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
