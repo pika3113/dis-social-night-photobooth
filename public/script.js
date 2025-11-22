@@ -125,7 +125,7 @@ async function copyLink(event) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(link);
         } else {
-            // Fallback for older browsers
+            // Fallback for older browsers (document.execCommand is deprecated but still widely supported)
             linkInput.select();
             linkInput.setSelectionRange(0, 99999);
             document.execCommand('copy');

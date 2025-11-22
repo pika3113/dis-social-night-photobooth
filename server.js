@@ -48,6 +48,18 @@ const upload = multer({
 // For production use, implement proper persistence with a database (e.g., MongoDB, PostgreSQL)
 const photoMetadata = {};
 
+// Helper function to escape HTML to prevent XSS
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 // Serve static files
 app.use(express.static('public'));
 app.use('/uploads', express.static(uploadsDir));
@@ -100,7 +112,52 @@ app.get('/photo/:id', (req, res) => {
     const metadata = photoMetadata[photoId];
 
     if (!metadata) {
-        return res.status(404).send('Photo not found');
+        return res.status(404).send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Photo Not Found - DIS Social Night</title>
+                <style>
+                    body {
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        padding: 20px;
+                    }
+                    .container {
+                        background: white;
+                        border-radius: 20px;
+                        padding: 40px;
+                        text-align: center;
+                        max-width: 500px;
+                    }
+                    h1 { color: #333; margin-bottom: 20px; }
+                    p { color: #666; font-size: 1.1em; margin-bottom: 30px; }
+                    a {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 15px 40px;
+                        border-radius: 50px;
+                        text-decoration: none;
+                        font-weight: 600;
+                        display: inline-block;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>📸 Photo Not Available</h1>
+                    <p>The photo you're looking for is not available or may have been removed.</p>
+                    <a href="/">Upload a New Photo</a>
+                </div>
+            </body>
+            </html>
+        `);
     }
 
     const photoPath = `/uploads/${metadata.filename}`;
@@ -203,12 +260,12 @@ app.get('/photo/:id', (req, res) => {
                 </div>
                 
                 <div class="info">
-                    <p><strong>Original filename:</strong> ${metadata.originalName}</p>
-                    <p><strong>Upload date:</strong> ${new Date(metadata.uploadDate).toLocaleString()}</p>
+                    <p><strong>Original filename:</strong> ${escapeHtml(metadata.originalName)}</p>
+                    <p><strong>Upload date:</strong> ${escapeHtml(new Date(metadata.uploadDate).toLocaleString())}</p>
                 </div>
                 
                 <div style="text-align: center;">
-                    <a href="${photoPath}" download="${metadata.originalName}" class="download-btn">
+                    <a href="${photoPath}" download="${escapeHtml(metadata.originalName)}" class="download-btn">
                         📥 Download Photo
                     </a>
                 </div>
