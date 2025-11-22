@@ -114,7 +114,7 @@ function displayResult(result) {
     document.getElementById('result-section').style.display = 'block';
 }
 
-async function copyLink() {
+async function copyLink(event) {
     const linkInput = document.getElementById('photoLink');
     const link = linkInput.value;
     const btn = event.target;

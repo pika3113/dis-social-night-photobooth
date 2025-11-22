@@ -10,9 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
-}
+fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -28,7 +26,7 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
     // Accept only image files with specific MIME types
-    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     const ext = path.extname(file.originalname).toLowerCase();
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
     
