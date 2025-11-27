@@ -441,13 +441,20 @@ app.get('/api/session/command', async (req, res) => {
 
 // Start a new session
 app.post('/api/session/start', (req, res) => {
-  // GUARD: Prevent session collision
-  if (activeSessionId && photosDatabase[activeSessionId]?.isActive) {
-    return res.status(409).json({
-      error: 'A session is already active',
-      activeSessionId: activeSessionId,
-      success: false
-    });
+  // FORCE RESET: If a session is already active, discard it
+  if (activeSessionId) {
+    console.log(`⚠️  Force starting new session. Discarding old session: ${activeSessionId}`);
+    
+    // Delete the old session from memory (effectively deleting its photos from the app)
+    if (photosDatabase[activeSessionId]) {
+      const photoCount = photosDatabase[activeSessionId].photos.length;
+      console.log(`🗑️  Deleted ${photoCount} photos from discarded session ${activeSessionId}`);
+      delete photosDatabase[activeSessionId];
+    }
+    
+    // Clear pending commands to prevent cross-talk
+    commandQueue = [];
+    activeSessionId = null;
   }
 
   const newSessionId = generateShortId();
