@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrImage = document.getElementById('qr-image');
     const downloadLink = document.getElementById('download-link');
     const statusMessage = document.getElementById('status-message');
+    const sessionCodeDisplay = document.getElementById('session-code-display');
 
     // State
     let pollInterval = null;
@@ -195,6 +196,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) {
                 qrImage.src = data.qrCode;
                 downloadLink.href = data.downloadUrl;
+                
+                // Display the 4-digit session code
+                if (sessionCodeDisplay) {
+                    sessionCodeDisplay.innerText = data.sessionId;
+                }
+
                 isSessionActive = false;
                 switchView('result');
                 updateStatus(`🎉 ${data.photoCount} photos ready!`, false);
