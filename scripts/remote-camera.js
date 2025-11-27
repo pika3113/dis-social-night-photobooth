@@ -17,11 +17,30 @@ let currentSessionId = null;
 console.log(`🎥 Remote Camera Script`);
 console.log(`📡 API URL: ${API_URL}`);
 
-// Helper: Execute gphoto2 command
-function capturePhoto() {
+// Helper: Execute gphoto2 command (or simulate)
+function capturePhoto(simulate = false) {
   return new Promise((resolve, reject) => {
     const filename = path.join('/tmp', `camera-${Date.now()}.jpg`);
     
+    if (simulate) {
+      // SIMULATION: Copy a test image instead of using camera
+      const testImage = path.join(__dirname, '../Testing/Myanmar_Protest.jpg');
+      
+      if (fs.existsSync(testImage)) {
+        fs.copyFileSync(testImage, filename);
+        console.log('🤖 [SIMULATION] Copied test image');
+        setTimeout(() => resolve(filename), 1000); // Fake delay
+      } else {
+        // Create minimal JPEG if test image missing
+        const minimalJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8VAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=', 'base64');
+        fs.writeFileSync(filename, minimalJpeg);
+        console.log('🤖 [SIMULATION] Created minimal JPEG');
+        setTimeout(() => resolve(filename), 500);
+      }
+      return;
+    }
+
+    // REAL CAMERA
     exec(`gphoto2 --capture-image-and-download --filename ${filename}`, (err, stdout) => {
       if (err) {
         reject(new Error(`Camera capture failed: ${err.message}`));
@@ -65,7 +84,8 @@ async function main() {
   const args = process.argv.slice(2);
   
   if (args[0] === 'listen') {
-    console.log('👂 Listening for remote commands...');
+    const simulate = args.includes('--simulate');
+    console.log(`👂 Listening for remote commands... ${simulate ? '(SIMULATION MODE)' : ''}`);
     console.log('   (Press Ctrl+C to stop)');
     
     // Poll for commands every 1 second
@@ -84,7 +104,7 @@ async function main() {
               const sessionId = sessionRes.data.sessionId;
               console.log(`📸 Capturing for session ${sessionId}...`);
               
-              const filePath = await capturePhoto();
+              const filePath = await capturePhoto(simulate);
               console.log(`✅ Captured: ${filePath}`);
               
               await uploadPhoto(filePath, sessionId);
@@ -158,7 +178,7 @@ async function main() {
   else {
     console.log(`
 Usage:
-  node scripts/remote-camera.js listen                 # Listen for web triggers (RECOMMENDED)
+  node scripts/remote-camera.js listen [--simulate]    # Listen for web triggers (add --simulate to test without camera)
   node scripts/remote-camera.js start-session          # Start a new session
   node scripts/remote-camera.js capture SESSION_ID     # Capture & upload photo
   node scripts/remote-camera.js finish SESSION_ID      # Finish session & get QR
@@ -166,6 +186,9 @@ Usage:
 Example:
   # Run this on the laptop connected to the camera:
   node scripts/remote-camera.js listen
+  
+  # Test without camera:
+  node scripts/remote-camera.js listen --simulate
     `);
   }
 }
