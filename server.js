@@ -60,10 +60,14 @@ const DEV_MODE = process.env.DEV_MODE === 'true' || process.env.DEV_MODE === 'TR
 console.log(`[DEBUG] DEV_MODE env var: "${process.env.DEV_MODE}"`);
 console.log(`[DEBUG] DEV_MODE enabled: ${DEV_MODE}`);
 
-// Ensure captured folder exists
-if (!fs.existsSync(CAPTURED_FOLDER)) {
-  fs.mkdirSync(CAPTURED_FOLDER, { recursive: true });
-  console.log(`📁 Created captured folder: ${CAPTURED_FOLDER}`);
+// Ensure captured folder exists (Only if not on Vercel)
+if (!process.env.VERCEL && !fs.existsSync(CAPTURED_FOLDER)) {
+  try {
+    fs.mkdirSync(CAPTURED_FOLDER, { recursive: true });
+    console.log(`📁 Created captured folder: ${CAPTURED_FOLDER}`);
+  } catch (err) {
+    console.warn(`⚠️  Could not create captured folder: ${err.message}`);
+  }
 }
 
 // Store photo metadata (in production, use a database like MongoDB/PostgreSQL)
@@ -553,18 +557,25 @@ app.post('/api/session/finish', async (req, res) => {
     // Build URL based on environment
     let baseUrl;
     
-    // Option 1: Force Vercel URL (set FORCE_VERCEL_URL=true in .env for local testing with Vercel URL)
-    if (process.env.FORCE_VERCEL_URL === 'true') {
-      // Use hardcoded URL if env var is set but VERCEL_URL is missing (local dev)
+    // Option 1: Explicit Public URL (Best for Local Booth + Cloud Gallery)
+    if (process.env.PUBLIC_URL) {
+      baseUrl = process.env.PUBLIC_URL.replace(/\/$/, ''); // Remove trailing slash
+      console.log(`🔗 Using configured PUBLIC_URL: ${baseUrl}`);
+    }
+    // Option 2: Force Vercel URL (Legacy env var)
+    else if (process.env.FORCE_VERCEL_URL === 'true') {
       baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dis-social-night-photobooth.vercel.app';
     }
-    // Option 2: On Vercel: use the Vercel URL directly
+    // Option 3: On Vercel: use the Vercel URL directly
     else if (process.env.VERCEL_URL) {
       baseUrl = `https://${process.env.VERCEL_URL}`;
     }
-    // Option 3: Local: use request host directly
+    // Option 4: Local: use LAN IP so phones can connect (Fallback)
     else {
-      baseUrl = `${req.protocol}://${req.get('host')}`;
+      const port = process.env.PORT || 3000;
+      const ip = getLocalIp();
+      baseUrl = `http://${ip}:${port}`;
+      console.log(`🔗 Generated QR code using LAN IP: ${baseUrl}`);
     }
     
     const shortUrl = `${baseUrl}/${sessionId}`;

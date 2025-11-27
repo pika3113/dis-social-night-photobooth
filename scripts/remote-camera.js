@@ -18,8 +18,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Use explicit Vercel URL (required for remote camera)
-const API_URL = process.env.VERCEL_URL || process.env.API_URL || 'https://dis-social-night-photobooth.vercel.app';
+// Use localhost by default for local setup
+const API_URL = process.env.API_URL || 'http://localhost:3000';
 let currentSessionId = null;
 
 console.log(`🎥 Remote Camera Script`);
