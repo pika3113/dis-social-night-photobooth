@@ -3,48 +3,91 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Photobooth</title>
+  <title>Photobooth Operator</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="container">
+  <div class="operator-container">
     
     <!-- VIEW 1: START SCREEN -->
     <div id="view-start" class="view-section">
-      <h1>Photobooth</h1>
-      <p class="subtitle">Ready to capture some memories?</p>
-      <button id="btn-start" class="btn primary large-btn">Start</button>
+      <div class="start-card">
+        <div class="icon-large">📸</div>
+        <h1>Photobooth Operator</h1>
+        <p class="subtitle">Ready to start a new session?</p>
+        <button id="btn-start" class="btn-primary btn-large">
+          <span class="btn-icon">▶</span>
+          Start New Session
+        </button>
+      </div>
     </div>
 
     <!-- VIEW 2: SESSION ACTIVE -->
     <div id="view-session" class="view-section hidden">
-      <h1>Say Cheese!</h1>
-      <div class="controls">
-        <button id="btn-trigger-dslr" class="btn primary">📸 Take photo</button>
-        <button id="btn-finish" class="btn secondary" style="background: #666;">Finish</button>
+      <div class="session-header">
+        <div class="header-left">
+          <h1 id="session-title">Your code is <span id="active-session-code"></span></h1>
+        </div>
+        <div class="header-right">
+          <div id="status-message" class="status-badge">Ready</div>
+          <button id="btn-cancel" class="btn-icon-only" title="Cancel Session">✕</button>
+        </div>
+      </div>
+
+      <div class="action-buttons">
+        <button id="btn-trigger-dslr" class="btn-compact btn-capture">
+          Capture Photo
+        </button>
+        <button id="btn-finish" class="btn-compact btn-finish">
+          Finish Session
+        </button>
       </div>
       
-      <div id="status-message" class="status-text">Waiting for photos...</div>
-      
-      <div id="session-gallery" class="live-gallery">
-        <!-- Photos appear here dynamically -->
+      <div class="gallery-container">
+        <div class="gallery-header">
+          <h3>Photos Captured</h3>
+          <span id="photo-count" class="photo-count-badge">0</span>
+        </div>
+        <div id="session-gallery" class="live-gallery">
+          <div class="empty-state">
+            <span class="empty-icon">📷</span>
+            <p>No photos yet. Click "Capture Photo" to begin!</p>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- VIEW 3: RESULT / QR -->
     <div id="view-result" class="view-section hidden">
-      <h1>All Done!</h1>
-      <div class="qr-wrapper">
-        <img id="qr-image" src="" alt="QR Code">
-      </div>
-      <p>Scan to download your photos!</p>
-      <a id="download-link" href="#" target="_blank" class="link">Open Gallery</a>
-      
-      <div id="session-code-display" style="margin-top: 20px; font-size: 2em; font-weight: bold; letter-spacing: 5px; color: #515151; background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; display: inline-block;">
-      </div>
+      <div class="result-card">
+        <div class="success-icon">🎉</div>
+        <h1>Session Complete!</h1>
+        <p class="result-subtitle" id="result-subtitle">Photos are ready to share</p>
 
-      <br><br>
-      <button id="btn-done" class="btn primary">Done (Next Person)</button>
+        <div class="qr-section">
+          <div class="qr-display">
+            <img id="qr-image" src="" alt="QR Code">
+          </div>
+          <div class="code-display">
+            <p class="code-prefix">Your code is</p>
+            <div id="session-code-display" class="session-code"></div>
+          </div>
+        </div>
+
+        <div class="result-actions">
+          <a id="download-link" href="#" target="_blank" class="btn-secondary btn-medium">
+            <span class="btn-icon">🔗</span>
+            Preview Gallery
+          </a>
+          <button id="btn-done" class="btn-primary btn-medium">
+            <span class="btn-icon">▶</span>
+            Next Session
+          </button>
+        </div>
+      </div>
     </div>
 
   </div>

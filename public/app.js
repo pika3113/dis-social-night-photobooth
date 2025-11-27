@@ -10,7 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
         start: document.getElementById('btn-start'),
         triggerDslr: document.getElementById('btn-trigger-dslr'),
         finish: document.getElementById('btn-finish'),
-        done: document.getElementById('btn-done')
+        done: document.getElementById('btn-done'),
+        cancel: document.getElementById('btn-cancel')
     };
 
     const sessionGallery = document.getElementById('session-gallery');
@@ -18,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadLink = document.getElementById('download-link');
     const statusMessage = document.getElementById('status-message');
     const sessionCodeDisplay = document.getElementById('session-code-display');
+    const photoCountBadge = document.getElementById('photo-count');
+    const resultSubtitle = document.getElementById('result-subtitle');
 
     // State
     let pollInterval = null;
@@ -38,6 +41,16 @@ document.addEventListener('DOMContentLoaded', () => {
     buttons.triggerDslr.addEventListener('click', triggerDslr);
     buttons.finish.addEventListener('click', finishSession);
     buttons.done.addEventListener('click', resetToStart);
+    if (buttons.cancel) buttons.cancel.addEventListener('click', cancelSession);
+
+    // Event delegation for delete buttons
+    sessionGallery.addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-btn') || e.target.closest('.delete-btn')) {
+            const btn = e.target.classList.contains('delete-btn') ? e.target : e.target.closest('.delete-btn');
+            const photoId = btn.dataset.id;
+            deletePhoto(photoId);
+        }
+    });
 
     // --- Functions ---
 
@@ -48,7 +61,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateStatus(message, isError = false) {
         statusMessage.innerText = message;
-        statusMessage.style.color = isError ? '#ff6b6b' : '#4CAF50';
+        if (isError) {
+            statusMessage.style.background = 'rgba(0, 0, 0, 0.6)';
+            statusMessage.style.borderColor = 'rgba(255, 107, 107, 0.9)';
+            statusMessage.style.color = '#fff';
+            statusMessage.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.8)';
+        } else {
+            statusMessage.style.background = 'rgba(0, 0, 0, 0.6)';
+            statusMessage.style.borderColor = 'rgba(76, 175, 80, 0.9)';
+            statusMessage.style.color = '#fff';
+            statusMessage.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.8)';
+        }
     }
 
     async function triggerDslr() {
@@ -92,9 +115,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 isSessionActive = true;
                 lastActivityTime = Date.now();
                 currentPhotoCount = 0;
-                sessionGallery.innerHTML = '';
+                updateGallery([]);
+                
+                // Display session code in header
+                const activeSessionCode = document.getElementById('active-session-code');
+                if (activeSessionCode) {
+                    activeSessionCode.textContent = data.sessionId;
+                }
+                
                 switchView('session');
-                updateStatus('Ready!', false);
+                updateStatus('Ready', false);
                 startPolling();
             } else {
                 updateStatus(`❌ ${data.error || 'Could not start session'}`, true);
@@ -170,14 +200,89 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateGallery(photos) {
-        sessionGallery.innerHTML = photos.map(photo => `
-            <div class="photo-card">
-                <img src="${photo.cloudinaryUrl}" alt="Session Photo" loading="lazy">
-            </div>
-        `).join('');
+        if (photos.length === 0) {
+            sessionGallery.innerHTML = `
+                <div class="empty-state">
+                    <span class="empty-icon">📷</span>
+                    <p>No photos yet. Click "Capture Photo" to begin!</p>
+                </div>
+            `;
+            if (photoCountBadge) photoCountBadge.textContent = '0';
+        } else {
+            sessionGallery.innerHTML = photos.map(photo => `
+                <div class="photo-card">
+                    <img src="${photo.cloudinaryUrl}" alt="Session Photo" loading="lazy">
+                    <button class="delete-btn" data-id="${photo.photoId || photo.cloudinaryPublicId}" title="Delete Photo">×</button>
+                </div>
+            `).join('');
+            
+            if (photoCountBadge) photoCountBadge.textContent = photos.length;
+            
+            // Scroll to bottom
+            sessionGallery.scrollTop = sessionGallery.scrollHeight;
+        }
+    }
+
+    async function deletePhoto(photoId) {
+        if (!confirm('Are you sure you want to delete this photo?')) return;
+
+        try {
+            updateStatus('🗑️ Deleting photo...', false);
+            const res = await fetch('/api/session/photo', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: currentSessionId, photoId })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                updateStatus('✅ Photo deleted', false);
+                
+                // Remove from UI immediately
+                const btn = document.querySelector(`.delete-btn[data-id="${photoId}"]`);
+                if (btn) {
+                    const card = btn.closest('.photo-card');
+                    if (card) {
+                        card.remove();
+                        
+                        // Update count
+                        currentPhotoCount--;
+                        if (photoCountBadge) photoCountBadge.textContent = currentPhotoCount;
+                        
+                        // Check empty state
+                        if (currentPhotoCount === 0) {
+                             sessionGallery.innerHTML = `
+                                <div class="empty-state">
+                                    <span class="empty-icon">📷</span>
+                                    <p>No photos yet. Click "Capture Photo" to begin!</p>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+            } else {
+                updateStatus(`❌ ${data.error || 'Delete failed'}`, true);
+            }
+        } catch (err) {
+            console.error('Delete failed:', err);
+            updateStatus('❌ Delete failed', true);
+        }
+    }
+
+    async function cancelSession() {
+        if (!confirm('Are you sure you want to cancel this session? All photos will be discarded.')) return;
+
+        stopPolling();
         
-        // Scroll to bottom
-        sessionGallery.scrollTop = sessionGallery.scrollHeight;
+        try {
+            updateStatus('🚫 Cancelling session...', false);
+            await fetch('/api/session/cancel', { method: 'POST' });
+            resetToStart();
+            updateStatus('Session cancelled', false);
+        } catch (err) {
+            console.error('Cancel failed:', err);
+            resetToStart(); // Reset anyway
+        }
     }
 
     async function finishSession() {
@@ -201,6 +306,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (sessionCodeDisplay) {
                     sessionCodeDisplay.innerText = data.sessionId;
                 }
+                
+                // Update result subtitle
+                if (resultSubtitle) {
+                    resultSubtitle.textContent = `${data.photoCount} photo${data.photoCount !== 1 ? 's' : ''} captured!`;
+                }
 
                 isSessionActive = false;
                 switchView('result');
@@ -219,7 +329,8 @@ document.addEventListener('DOMContentLoaded', () => {
         currentSessionId = null;
         isSessionActive = false;
         currentPhotoCount = 0;
-        updateStatus('Waiting for photos...', false);
+        updateGallery([]);
+        updateStatus('Ready', false);
         switchView('start');
     }
 });

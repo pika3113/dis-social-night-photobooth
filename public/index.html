@@ -5,100 +5,113 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DIS Social Night 2025</title>
   <link rel="stylesheet" href="/styles.css">
-  <style>
-    .landing-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      text-align: center;
-      padding: 20px;
-    }
-    .code-input-wrapper {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 40px;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      max-width: 400px;
-      width: 100%;
-    }
-    h1 {
-      font-size: 2.5em;
-      margin-bottom: 10px;
-      background: linear-gradient(45deg, #ff6b6b, #feca57);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    p {
-      color: #aaa;
-      margin-bottom: 30px;
-    }
-    input {
-      width: 100%;
-      padding: 15px;
-      font-size: 1.5em;
-      text-align: center;
-      letter-spacing: 5px;
-      text-transform: uppercase;
-      background: rgba(0, 0, 0, 0.3);
-      border: 2px solid #444;
-      border-radius: 10px;
-      color: white;
-      margin-bottom: 20px;
-      transition: border-color 0.3s;
-    }
-    input:focus {
-      outline: none;
-      border-color: #feca57;
-    }
-    button {
-      width: 100%;
-      padding: 15px;
-      font-size: 1.2em;
-      font-weight: bold;
-      background: linear-gradient(45deg, #ff6b6b, #feca57);
-      border: none;
-      border-radius: 10px;
-      color: #1a1a1a;
-      cursor: pointer;
-      transition: transform 0.2s;
-    }
-    button:hover {
-      transform: scale(1.02);
-    }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="landing-container">
-    <div class="code-input-wrapper">
-      <h1>DIS Social Night</h1>
-      <p>Enter your 4-character code to view photos</p>
-      
-      <input type="text" id="code-input" placeholder="CODE" maxlength="4">
-      <button id="btn-go">View Photos</button>
+  <div class="guest-container">
+    <div class="guest-card">
+      <div class="brand-section">
+        <div class="icon-header">🎉</div>
+        <h1>DIS Social Night</h1>
+        <p class="tagline">Capture. Share. Remember.</p>
+      </div>
+
+      <div class="input-section">
+        <label for="code-input" class="input-label">Enter Your Code</label>
+        <input 
+          type="text" 
+          id="code-input" 
+          class="code-input" 
+          placeholder="ABCD" 
+          maxlength="4"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <div id="error-msg" class="error-message">
+          <span class="error-icon">⚠️</span>
+          <span id="error-text"></span>
+        </div>
+      </div>
+
+      <button id="btn-go" class="btn-primary btn-large">
+        <span class="btn-icon">→</span>
+        View My Photos
+      </button>
+
+      <div class="help-text">
+        Don't have a code? Visit the photobooth to get yours!
+      </div>
     </div>
   </div>
 
   <script>
     const input = document.getElementById('code-input');
     const btn = document.getElementById('btn-go');
+    const errorMsg = document.getElementById('error-msg');
+    const errorText = document.getElementById('error-text');
 
-    function goToGallery() {
+    // Auto-focus input on load
+    input.focus();
+
+    async function goToGallery() {
       const code = input.value.trim().toUpperCase();
-      if (code.length === 4) {
-        window.location.href = `/${code}`;
-      } else {
-        input.style.borderColor = '#ff6b6b';
-        setTimeout(() => input.style.borderColor = '#444', 500);
+      
+      if (code.length !== 4) {
+        showError('Please enter a 4-character code');
+        return;
       }
+
+      // Disable button and show loading state
+      btn.disabled = true;
+      btn.innerHTML = '<span class="btn-icon spinner">⟳</span>Loading...';
+      errorMsg.style.display = 'none';
+
+      try {
+        // Check if session exists by fetching from server
+        const res = await fetch(`/api/session/current?sessionId=${code}`);
+        const data = await res.json();
+
+        if (data.active || data.photos) {
+          // Session found
+          window.location.href = `/${code}`;
+        } else {
+          // Session not found
+          showError('Code not found. Please check and try again.');
+          resetButton();
+        }
+      } catch (err) {
+        showError('Connection error. Please try again.');
+        resetButton();
+      }
+    }
+
+    function showError(message) {
+      errorText.textContent = message;
+      errorMsg.style.display = 'flex';
+      input.classList.add('input-error');
+      
+      // Shake animation
+      input.style.animation = 'shake 0.5s';
+      setTimeout(() => input.style.animation = '', 500);
+    }
+
+    function resetButton() {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="btn-icon">→</span>View My Photos';
     }
 
     btn.addEventListener('click', goToGallery);
     
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') goToGallery();
+    });
+
+    input.addEventListener('input', () => {
+      input.classList.remove('input-error');
+      errorMsg.style.display = 'none';
+      input.value = input.value.toUpperCase();
     });
   </script>
 </body>

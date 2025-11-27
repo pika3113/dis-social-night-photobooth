@@ -64,9 +64,9 @@ console.log(`[DEBUG] DEV_MODE enabled: ${DEV_MODE}`);
 if (!process.env.VERCEL && !fs.existsSync(CAPTURED_FOLDER)) {
   try {
     fs.mkdirSync(CAPTURED_FOLDER, { recursive: true });
-    console.log(`📁 Created captured folder: ${CAPTURED_FOLDER}`);
+    console.log(`[FOLDER] Created captured folder: ${CAPTURED_FOLDER}`);
   } catch (err) {
-    console.warn(`⚠️  Could not create captured folder: ${err.message}`);
+    console.warn(`[WARN] Could not create captured folder: ${err.message}`);
   }
 }
 
@@ -84,9 +84,9 @@ if (fs.existsSync(SESSIONS_FILE)) {
       if (loaded[key].uploadDate) loaded[key].uploadDate = new Date(loaded[key].uploadDate);
     }
     Object.assign(photosDatabase, loaded);
-    console.log(`📂 Loaded ${Object.keys(photosDatabase).length} sessions from disk`);
+    console.log(`[LOAD] Loaded ${Object.keys(photosDatabase).length} sessions from disk`);
   } catch (err) {
-    console.error('❌ Failed to load sessions:', err);
+    console.error('[ERR] Failed to load sessions:', err);
   }
 }
 
@@ -96,7 +96,7 @@ function saveSessions() {
     try {
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(photosDatabase, null, 2));
     } catch (err) {
-      console.error('❌ Failed to save sessions:', err);
+      console.error('[ERR] Failed to save sessions:', err);
     }
   }
 }
@@ -145,7 +145,7 @@ async function retryAsync(fn, retries = CAMERA_TRIGGER_RETRIES, delay = 500) {
       return await fn();
     } catch (err) {
       if (i === retries - 1) throw err;
-      console.log(`⚠️  Attempt ${i + 1} failed, retrying in ${delay}ms...`);
+      console.log(`[WARN] Attempt ${i + 1} failed, retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
@@ -164,7 +164,7 @@ function cleanupOldSessions() {
   }
   
   if (deletedCount > 0) {
-    console.log(`🧹 Cleaned up ${deletedCount} expired sessions`);
+    console.log(`[CLEANUP] Cleaned up ${deletedCount} expired sessions`);
   }
 }
 
@@ -192,16 +192,16 @@ function simulateCameraCapture() {
     // Skip file write on Vercel (read-only filesystem)
     // The simulated photo buffer will be handled directly in the trigger endpoint
     if (process.env.VERCEL) {
-      console.log(`📸 [DEV] Simulated photo ready for upload (Vercel mode)`);
+      console.log(`[DEV-SIM] Simulated photo ready for upload (Vercel mode)`);
       return;
     }
     
     const filename = path.join(CAPTURED_FOLDER, `simulated-${Date.now()}.jpg`);
     const buffer = createSimulatedPhoto();
     fs.writeFileSync(filename, buffer);
-    console.log(`📸 [DEV] Simulated photo saved: ${path.basename(filename)}`);
+    console.log(`[DEV-SIM] Simulated photo saved: ${path.basename(filename)}`);
   } catch (err) {
-    console.error(`❌ [DEV] Failed to create simulated photo:`, err.message);
+    console.error(`[DEV-ERR] Failed to create simulated photo:`, err.message);
   }
 }
 
@@ -219,7 +219,7 @@ function initializeFileWatcher() {
   try {
     chokidar = require('chokidar');
   } catch (err) {
-    console.warn('⚠️  File watcher skipped (chokidar not available)');
+    console.warn('[WARN] File watcher skipped (chokidar not available)');
     return;
   }
   
@@ -235,10 +235,10 @@ function initializeFileWatcher() {
   });
 
   fileWatcher.on('add', async (filePath) => {
-    console.log(`🆕 Photo detected: ${path.basename(filePath)}`);
+    console.log(`[NEW-PHOTO] Photo detected: ${path.basename(filePath)}`);
     
     if (!activeSessionId || !photosDatabase[activeSessionId]) {
-      console.log('⚠️  No active session, skipping upload');
+      console.log('[WARN] No active session, skipping upload');
       return;
     }
 
@@ -260,16 +260,16 @@ function initializeFileWatcher() {
           timestamp: Date.now()
         });
         saveSessions(); // Persist
-        console.log(`✅ Photo added to session ${activeSessionId}`);
+        console.log(`[OK] Photo added to session ${activeSessionId}`);
       }
     } catch (err) {
-      console.error(`❌ Failed to upload detected photo: ${err.message}`);
+      console.error(`[ERR] Failed to upload detected photo: ${err.message}`);
       // Queue for retry
       uploadQueue.push({ filePath, sessionId: activeSessionId, attempts: 0 });
     }
   });
 
-  console.log(`👁️  File watcher initialized for ${CAPTURED_FOLDER}`);
+  console.log(`[WATCH] File watcher initialized for ${CAPTURED_FOLDER}`);
 }
 
 // ===== CLOUDINARY UPLOAD WITH RETRY =====
@@ -289,28 +289,28 @@ async function uploadToCloudinaryWithRetry(buffer, sessionId, photoId, attempt =
         },
         (error, result) => {
           if (error) {
-            console.log(`📤 Upload callback error (attempt ${attempt}):`, error.message);
+            console.log(`[UPLOAD-ERR] Upload callback error (attempt ${attempt}):`, error.message);
             reject(error);
           } else {
-            console.log(`✅ Upload success for ${photoId}:`, result.secure_url);
+            console.log(`[UPLOAD-OK] Upload success for ${photoId}:`, result.secure_url);
             resolve(result);
           }
         }
       );
       
       uploadStream.on('error', (err) => {
-        console.log(`📤 Upload stream error (attempt ${attempt}):`, err.message);
+        console.log(`[UPLOAD-ERR] Upload stream error (attempt ${attempt}):`, err.message);
         reject(err);
       });
       stream.pipe(uploadStream);
     });
   } catch (err) {
     if (attempt < UPLOAD_RETRY_ATTEMPTS) {
-      console.log(`⚠️  Upload attempt ${attempt} failed, retrying... (${err.message})`);
+      console.log(`[WARN] Upload attempt ${attempt} failed, retrying... (${err.message})`);
       await sleep(UPLOAD_RETRY_DELAY);
       return uploadToCloudinaryWithRetry(buffer, sessionId, photoId, attempt + 1);
     }
-    console.log(`❌ Upload failed after ${UPLOAD_RETRY_ATTEMPTS} attempts: ${err.message}`);
+    console.log(`[ERR] Upload failed after ${UPLOAD_RETRY_ATTEMPTS} attempts: ${err.message}`);
     throw err;
   }
 }
@@ -321,7 +321,7 @@ setInterval(async () => {
     const { filePath, sessionId, attempts } = uploadQueue.shift();
     
     if (attempts >= UPLOAD_RETRY_ATTEMPTS) {
-      console.log(`❌ Gave up on ${filePath} after ${attempts} attempts`);
+      console.log(`[ERR] Gave up on ${filePath} after ${attempts} attempts`);
       continue;
     }
 
@@ -331,7 +331,7 @@ setInterval(async () => {
         const photoId = `retry_${Date.now()}`;
         
         const result = await uploadToCloudinaryWithRetry(buffer, sessionId, photoId);
-        console.log(`✅ Retry successful for ${path.basename(filePath)}`);
+        console.log(`[OK] Retry successful for ${path.basename(filePath)}`);
       }
     } catch (err) {
       console.log(`⚠️  Retry failed, re-queueing...`);
@@ -344,7 +344,7 @@ setInterval(async () => {
 
 // Trigger the camera (Watcher script picks this up OR direct execution)
 app.post('/api/session/trigger', async (req, res) => {
-  console.log('📸 Trigger requested');
+  console.log('[TRIGGER] Trigger requested');
 
   if (!activeSessionId) {
     return res.status(400).json({ error: 'No active session', success: false });
@@ -355,7 +355,7 @@ app.post('/api/session/trigger', async (req, res) => {
 
   // DEV MODE: Use simulated camera
   if (DEV_MODE) {
-    console.log('🎮 [DEV MODE] Using simulated camera');
+    console.log('[DEV] Using simulated camera');
     
     // On Vercel: Upload simulated photo directly (no filesystem write)
     if (process.env.VERCEL) {
@@ -377,11 +377,11 @@ app.post('/api/session/trigger', async (req, res) => {
             timestamp: Date.now()
           });
           saveSessions(); // Persist
-          console.log(`✅ Photo added to session ${activeSessionId}`);
+          console.log(`[OK] Photo added to session ${activeSessionId}`);
           success = true;
         }
       } catch (err) {
-        console.error(`❌ Failed to upload simulated photo: ${err.message}`);
+        console.error(`[ERR] Failed to upload simulated photo: ${err.message}`);
         errorMsg = err.message;
       }
     } else {
@@ -392,7 +392,7 @@ app.post('/api/session/trigger', async (req, res) => {
   }
   // PRODUCTION: Direct Execution (If running locally/Electron)
   else if (process.env.IS_ELECTRON || process.env.LOCAL_TRIGGER) {
-    console.log('⚡ Executing direct trigger command...');
+    console.log('[DIRECT] Executing direct trigger command...');
     
     try {
       await retryAsync(async () => {
@@ -409,7 +409,7 @@ app.post('/api/session/trigger', async (req, res) => {
               clearTimeout(timeout);
               if (err) reject(err);
               else {
-                console.log('✅ Direct trigger success');
+                console.log('[OK] Direct trigger success');
                 resolve();
               }
             });
@@ -422,7 +422,7 @@ app.post('/api/session/trigger', async (req, res) => {
               clearTimeout(timeout);
               if (err) reject(err);
               else {
-                console.log('✅ Direct trigger success');
+                console.log('[OK] Direct trigger success');
                 resolve();
               }
             });
@@ -431,13 +431,13 @@ app.post('/api/session/trigger', async (req, res) => {
       });
       success = true;
     } catch (err) {
-      console.error('❌ Direct trigger failed:', err);
+      console.error('[ERR] Direct trigger failed:', err);
       errorMsg = 'Camera trigger failed';
     }
   }
   // REMOTE TRIGGER: Queue command for remote camera script
   else {
-    console.log('📡 Queuing remote trigger command...');
+    console.log('[REMOTE] Queuing remote trigger command...');
     commandQueue.push({ type: 'trigger', timestamp: Date.now() });
     success = true;
   }
@@ -483,12 +483,12 @@ app.get('/api/session/command', async (req, res) => {
 app.post('/api/session/start', (req, res) => {
   // FORCE RESET: If a session is already active, discard it
   if (activeSessionId) {
-    console.log(`⚠️  Force starting new session. Discarding old session: ${activeSessionId}`);
+    console.log(`[WARN] Force starting new session. Discarding old session: ${activeSessionId}`);
     
     // Delete the old session from memory (effectively deleting its photos from the app)
     if (photosDatabase[activeSessionId]) {
       const photoCount = photosDatabase[activeSessionId].photos.length;
-      console.log(`🗑️  Deleted ${photoCount} photos from discarded session ${activeSessionId}`);
+      console.log(`[DELETE] Deleted ${photoCount} photos from discarded session ${activeSessionId}`);
       delete photosDatabase[activeSessionId];
     }
     
@@ -515,12 +515,72 @@ app.post('/api/session/start', (req, res) => {
   
   saveSessions(); // Persist
 
-  console.log(`🎬 Session started: ${newSessionId}`);
+  console.log(`[SESSION-START] Session started: ${newSessionId}`);
   
   // Notify remote camera
   commandQueue.push({ type: 'session_start', sessionId: newSessionId });
   
   res.json({ success: true, sessionId: newSessionId });
+});
+
+// Delete a photo from the current session
+app.delete('/api/session/photo', async (req, res) => {
+  const { sessionId, photoId } = req.body;
+
+  if (!sessionId || !photoId) {
+    return res.status(400).json({ error: 'Session ID and Photo ID required', success: false });
+  }
+
+  if (!photosDatabase[sessionId]) {
+    return res.status(404).json({ error: 'Session not found', success: false });
+  }
+
+  const session = photosDatabase[sessionId];
+  const photoIndex = session.photos.findIndex(p => p.photoId === photoId || p.cloudinaryPublicId === photoId);
+
+  if (photoIndex === -1) {
+    return res.status(404).json({ error: 'Photo not found in session', success: false });
+  }
+
+  // Remove from database
+  const removedPhoto = session.photos.splice(photoIndex, 1)[0];
+  saveSessions();
+
+  console.log(`[DELETE] Deleted photo ${photoId} from session ${sessionId}`);
+
+  // Optionally delete from Cloudinary (async, don't wait)
+  if (removedPhoto.cloudinaryPublicId) {
+    cloudinary.uploader.destroy(removedPhoto.cloudinaryPublicId, (err, result) => {
+      if (err) console.error('Failed to delete from Cloudinary:', err);
+      else console.log('[DELETE-OK] Deleted from Cloudinary:', result);
+    });
+  }
+
+  res.json({ success: true, photoCount: session.photos.length });
+});
+
+// Cancel/Abort current session
+app.post('/api/session/cancel', (req, res) => {
+  if (!activeSessionId) {
+    return res.status(400).json({ error: 'No active session', success: false });
+  }
+
+  const sessionId = activeSessionId;
+  
+  // Delete session data
+  if (photosDatabase[sessionId]) {
+    delete photosDatabase[sessionId];
+  }
+  
+  activeSessionId = null;
+  saveSessions();
+  
+  // Notify remote camera
+  commandQueue.push({ type: 'session_cancel', sessionId: sessionId });
+  
+  console.log(`[CANCEL] Session cancelled: ${sessionId}`);
+  
+  res.json({ success: true });
 });
 
 // Update session status (from remote camera)
@@ -533,7 +593,7 @@ app.post('/api/session/status', (req, res) => {
 
   // RESILIENCE: If session is missing (e.g. server restart), recreate it
   if (!photosDatabase[sessionId]) {
-    console.log(`⚠️  Session ${sessionId} not found (server restart?), recreating...`);
+    console.log(`[WARN] Session ${sessionId} not found (server restart?), recreating...`);
     photosDatabase[sessionId] = {
       photos: [],
       isSinglePhoto: false,
@@ -545,13 +605,13 @@ app.post('/api/session/status', (req, res) => {
     // Restore as active session if none exists
     if (!activeSessionId) {
       activeSessionId = sessionId;
-      console.log(`🔄 Restored ${sessionId} as active session`);
+      console.log(`[RESTORE] Restored ${sessionId} as active session`);
     }
   }
   
   photosDatabase[sessionId].status = status;
   saveSessions(); // Persist
-  console.log(`ℹ️  Session ${sessionId} status: ${status}`);
+  console.log(`[INFO] Session ${sessionId} status: ${status}`);
   res.json({ success: true });
 });
 
@@ -599,7 +659,7 @@ app.post('/api/session/finish', async (req, res) => {
     // Option 1: Explicit Public URL (Best for Local Booth + Cloud Gallery)
     if (process.env.PUBLIC_URL) {
       baseUrl = process.env.PUBLIC_URL.replace(/\/$/, ''); // Remove trailing slash
-      console.log(`🔗 Using configured PUBLIC_URL: ${baseUrl}`);
+      console.log(`[CONFIG] Using configured PUBLIC_URL: ${baseUrl}`);
     }
     // Option 2: Force Vercel URL (Legacy env var)
     else if (process.env.FORCE_VERCEL_URL === 'true') {
@@ -614,7 +674,7 @@ app.post('/api/session/finish', async (req, res) => {
       const port = process.env.PORT || 3000;
       const ip = getLocalIp();
       baseUrl = `http://${ip}:${port}`;
-      console.log(`🔗 Generated QR code using LAN IP: ${baseUrl}`);
+      console.log(`[QR] Generated QR code using LAN IP: ${baseUrl}`);
     }
     
     const shortUrl = `${baseUrl}/${sessionId}`;
@@ -633,12 +693,12 @@ app.post('/api/session/finish', async (req, res) => {
     setTimeout(() => {
       if (photosDatabase[sessionId]) {
         delete photosDatabase[sessionId];
-        console.log(`🧹 Cleared session ${sessionId} (photos already in Cloudinary)`);
+        console.log(`[CLEANUP] Cleared session ${sessionId} (photos already in Cloudinary)`);
       }
     }, clearDelay);
     */
 
-    console.log(`🏁 Session finished: ${sessionId} with ${photoCount} photos`);
+    console.log(`[SESSION-END] Session finished: ${sessionId} with ${photoCount} photos`);
 
     // Notify remote camera
     commandQueue.push({ type: 'session_finish', sessionId: sessionId });
@@ -684,7 +744,7 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
       });
       
       saveSessions(); // Persist
-      console.log(`✅ Photo URL added to session ${sessionId} (Direct Upload)`);
+      console.log(`[OK] Photo URL added to session ${sessionId} (Direct Upload)`);
       return res.json({ success: true, sessionId });
     }
 
@@ -721,7 +781,7 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
         );
         return { photoId, result, success: true };
       } catch (err) {
-        console.error(`❌ Failed to upload photo ${photoId}:`, err.message);
+        console.error(`[ERR] Failed to upload photo ${photoId}:`, err.message);
         // Queue for retry
         uploadQueue.push({
           buffer: file.buffer,
@@ -738,9 +798,9 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
     const failedCount = uploads.length - successfulUploads.length;
 
     if (successfulUploads.length > 0) {
-      console.log(`✅ Uploaded ${successfulUploads.length}/${uploads.length} photo(s) (Session: ${sessionId})`);
+      console.log(`[OK] Uploaded ${successfulUploads.length}/${uploads.length} photo(s) (Session: ${sessionId})`);
     } else {
-      console.error(`❌ All uploads failed, queued for retry`);
+      console.error(`[ERR] All uploads failed, queued for retry`);
       return res.status(500).json({
         error: 'Upload failed, will retry',
         success: false,
@@ -813,7 +873,7 @@ app.get('/api/photo/:photoId', async (req, res) => {
     // Fetch directly from Cloudinary
     const result = await cloudinary.api.resource(`dis social night 2025/${photoId}`);
     
-    console.log('📷 Fetched from Cloudinary:', result.secure_url);
+    console.log('[FETCH] Fetched from Cloudinary:', result.secure_url);
     
     res.json({
       photoId: photoId,
@@ -822,7 +882,7 @@ app.get('/api/photo/:photoId', async (req, res) => {
       downloadUrl: `${req.protocol}://${req.get('host')}/download/${photoId}`
     });
   } catch (error) {
-    console.error('❌ Cloudinary fetch error:', error);
+    console.error('[ERR] Cloudinary fetch error:', error);
     return res.status(404).json({ error: 'Photo not found' });
   }
 });
@@ -962,9 +1022,9 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
 
   // Graceful shutdown on Ctrl+C
   process.on('SIGINT', () => {
-    console.log('\n👋 Shutting down gracefully...');
+    console.log('\n[SHUTDOWN] Shutting down gracefully...');
     server.close(() => {
-      console.log('✅ Server stopped');
+      console.log('[OK] Server stopped');
       process.exit(0);
     });
   });

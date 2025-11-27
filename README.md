@@ -32,6 +32,7 @@ npm start
 Or for development with auto-restart:
 ```bash
 npm run dev
+npm run remote listen -- --simulate
 ```
 
 3. Open your browser and navigate to:
@@ -47,6 +48,8 @@ http://localhost:3000
 2. Click the upload area or drag and drop an image file
 3. Click "Upload Photo"
 4. A QR code will be generated automatically
+
+
 
 ### Download a Photo
 
