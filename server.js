@@ -151,6 +151,13 @@ function createSimulatedPhoto() {
 
 function simulateCameraCapture() {
   try {
+    // Skip file write on Vercel (read-only filesystem)
+    // The simulated photo buffer will be handled directly in the trigger endpoint
+    if (process.env.VERCEL) {
+      console.log(`📸 [DEV] Simulated photo ready for upload (Vercel mode)`);
+      return;
+    }
+    
     const filename = path.join(CAPTURED_FOLDER, `simulated-${Date.now()}.jpg`);
     const buffer = createSimulatedPhoto();
     fs.writeFileSync(filename, buffer);
@@ -310,8 +317,38 @@ app.post('/api/session/trigger', async (req, res) => {
   // DEV MODE: Use simulated camera
   if (DEV_MODE) {
     console.log('🎮 [DEV MODE] Using simulated camera');
-    simulateCameraCapture();
-    success = true;
+    
+    // On Vercel: Upload simulated photo directly (no filesystem write)
+    if (process.env.VERCEL) {
+      try {
+        const buffer = createSimulatedPhoto();
+        const photoId = `capture_${Date.now()}`;
+        
+        const uploadResult = await uploadToCloudinaryWithRetry(
+          buffer,
+          activeSessionId,
+          photoId
+        );
+
+        if (uploadResult) {
+          photosDatabase[activeSessionId].photos.push({
+            cloudinaryUrl: uploadResult.secure_url,
+            cloudinaryPublicId: uploadResult.public_id,
+            photoId: photoId,
+            timestamp: Date.now()
+          });
+          console.log(`✅ Photo added to session ${activeSessionId}`);
+          success = true;
+        }
+      } catch (err) {
+        console.error(`❌ Failed to upload simulated photo: ${err.message}`);
+        errorMsg = err.message;
+      }
+    } else {
+      // Local: Save to filesystem (watcher will detect and upload)
+      simulateCameraCapture();
+      success = true;
+    }
   }
   // PRODUCTION: Direct Execution (If running locally/Electron)
   else if (process.env.IS_ELECTRON || process.env.LOCAL_TRIGGER) {
@@ -338,35 +375,39 @@ app.post('/api/session/trigger', async (req, res) => {
             });
           } else {
             // Mac/Linux (gphoto2)
-            exec(
-              `gphoto2 --capture-image-and-download --filename "${path.join(CAPTURED_FOLDER, 'capture-%H%M%S.jpg')}"`,
-              { timeout: CAMERA_TRIGGER_TIMEOUT },
-              (err) => {
-                clearTimeout(timeout);
-                if (err) reject(err);
-                else {
-                  console.log('✅ Direct trigger success');
-                  resolve();
-                }
+            const filename = path.join(CAPTURED_FOLDER, `capture-${Date.now()}.jpg`);
+            const cmd = `gphoto2 --capture-image-and-download --filename "${filename}"`;
+            
+            exec(cmd, { timeout: CAMERA_TRIGGER_TIMEOUT }, (err, stdout) => {
+              clearTimeout(timeout);
+              if (err) reject(err);
+              else {
+                console.log('✅ Direct trigger success');
+                resolve();
               }
-            );
+            });
           }
         });
-      }, CAMERA_TRIGGER_RETRIES, 1000);
-      
+      });
       success = true;
     } catch (err) {
-      errorMsg = err.message;
-      console.error('❌ Direct trigger failed after retries:', err.message);
+      console.error('❌ Direct trigger failed:', err);
+      errorMsg = 'Camera trigger failed';
     }
   }
+  // REMOTE TRIGGER: Queue command for remote camera script
+  else {
+    console.log('📡 Queuing remote trigger command...');
+    commandQueue.push({ type: 'trigger', timestamp: Date.now() });
+    success = true;
+  }
 
-  // METHOD 2: Command Queue (For Watcher Script)
-  // Always push to queue so watcher can pick it up
-  commandQueue.push({ type: 'capture', timestamp: Date.now() });
-  
-  res.json({
-    success: success || true,
+  if (success) {
+    res.json({ success: true });
+  } else {
+    res.status(500).json({ error: errorMsg || 'Trigger failed', success: false });
+  }
+});
     message: success ? '📸 Cheese! Waiting for camera...' : 'Trigger queued (check logs if using watcher)',
     error: errorMsg || undefined
   });
@@ -445,15 +486,21 @@ app.post('/api/session/finish', async (req, res) => {
   }
 
   try {
-    // Build URL with local IP detection
-    let baseUrl = `${req.protocol}://${req.get('host')}`;
+    // Build URL based on environment
+    let baseUrl;
     
-    // If localhost, try to use local IP for mobile QR scanning
-    if (req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1')) {
-      const localIp = getLocalIp();
-      if (localIp !== 'localhost') {
-        baseUrl = `http://${localIp}:${PORT}`;
-      }
+    // Option 1: Force Vercel URL (set FORCE_VERCEL_URL=true in .env for local testing with Vercel URL)
+    if (process.env.FORCE_VERCEL_URL === 'true') {
+      // Use hardcoded URL if env var is set but VERCEL_URL is missing (local dev)
+      baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dis-social-night-photobooth.vercel.app';
+    }
+    // Option 2: On Vercel: use the Vercel URL directly
+    else if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    }
+    // Option 3: Local: use request host directly
+    else {
+      baseUrl = `${req.protocol}://${req.get('host')}`;
     }
     
     const shortUrl = `${baseUrl}/${sessionId}`;
