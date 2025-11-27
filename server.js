@@ -409,13 +409,33 @@ app.post('/api/session/trigger', async (req, res) => {
   }
 });
 
-// Endpoint for Watcher Script to poll for commands
-app.get('/api/session/command', (req, res) => {
-  if (commandQueue.length > 0) {
-    const cmd = commandQueue.shift(); // Get oldest command
-    return res.json({ command: cmd.type });
-  }
-  res.json({ command: null });
+// Endpoint for Watcher Script to poll for commands (Long Polling Support)
+app.get('/api/session/command', async (req, res) => {
+  const waitForCommand = req.query.wait === 'true';
+  // Vercel serverless functions have a default 10s timeout on free tier.
+  // We'll wait up to 8s to be safe, checking every 200ms.
+  const MAX_WAIT_TIME = 8000; 
+  const CHECK_INTERVAL = 200;
+  const startTime = Date.now();
+
+  const checkQueue = async () => {
+    // 1. Check if command exists
+    if (commandQueue.length > 0) {
+      const cmd = commandQueue.shift(); // Get oldest command
+      return res.json({ command: cmd.type });
+    }
+
+    // 2. If long-polling enabled and time remains, wait and retry
+    if (waitForCommand && (Date.now() - startTime < MAX_WAIT_TIME)) {
+      await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL));
+      return checkQueue();
+    }
+
+    // 3. Timeout or no wait requested
+    res.json({ command: null });
+  };
+
+  await checkQueue();
 });
 
 // Start a new session
@@ -453,28 +473,46 @@ app.post('/api/session/start', (req, res) => {
 app.post('/api/session/status', (req, res) => {
   const { status, sessionId } = req.body;
   
-  // Use active session if not provided
-  const targetSessionId = sessionId || activeSessionId;
-  
-  if (targetSessionId && photosDatabase[targetSessionId]) {
-    photosDatabase[targetSessionId].status = status;
-    console.log(`ℹ️  Session ${targetSessionId} status: ${status}`);
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ error: 'Session not found', success: false });
+  if (!sessionId) {
+    return res.status(400).json({ error: 'Session ID required', success: false });
   }
+
+  // RESILIENCE: If session is missing (e.g. server restart), recreate it
+  if (!photosDatabase[sessionId]) {
+    console.log(`⚠️  Session ${sessionId} not found (server restart?), recreating...`);
+    photosDatabase[sessionId] = {
+      photos: [],
+      isSinglePhoto: false,
+      uploadDate: new Date(),
+      isActive: true,
+      status: status,
+      createdAt: Date.now()
+    };
+    // Restore as active session if none exists
+    if (!activeSessionId) {
+      activeSessionId = sessionId;
+      console.log(`🔄 Restored ${sessionId} as active session`);
+    }
+  }
+  
+  photosDatabase[sessionId].status = status;
+  console.log(`ℹ️  Session ${sessionId} status: ${status}`);
+  res.json({ success: true });
 });
 
 // Get current session status (polling)
 app.get('/api/session/current', (req, res) => {
-  if (!activeSessionId || !photosDatabase[activeSessionId]) {
+  // Allow client to specify which session they are tracking
+  const targetSessionId = req.query.sessionId || activeSessionId;
+
+  if (!targetSessionId || !photosDatabase[targetSessionId]) {
     return res.json({ active: false });
   }
 
-  const session = photosDatabase[activeSessionId];
+  const session = photosDatabase[targetSessionId];
   res.json({
     active: true,
-    sessionId: activeSessionId,
+    sessionId: targetSessionId,
     photoCount: session.photos.length,
     photos: session.photos,
     status: session.status || 'Ready'

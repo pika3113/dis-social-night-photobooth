@@ -118,54 +118,66 @@ async function main() {
     console.log(`👂 Listening for remote commands... ${simulate ? '(SIMULATION MODE)' : ''}`);
     console.log('   (Press Ctrl+C to stop)');
     
-    // Poll for commands every 1 second
-    setInterval(async () => {
-      try {
-        const res = await axios.get(`${API_URL}/api/session/command`);
-        const cmd = res.data.command;
-        
-        if (cmd === 'trigger') {
-          console.log('⚡ Received TRIGGER command!');
+    // Long Polling Loop
+    const pollLoop = async () => {
+      while (true) {
+        try {
+          // Request with wait=true (Long Polling)
+          // Set axios timeout slightly longer than server timeout (10s vs 8s)
+          const res = await axios.get(`${API_URL}/api/session/command?wait=true`, { 
+            timeout: 15000 
+          });
           
-          // Get current session ID to upload to
-          try {
-            const sessionRes = await axios.get(`${API_URL}/api/session/current`);
-            if (sessionRes.data.active) {
-              const sessionId = sessionRes.data.sessionId;
-              console.log(`📸 Capturing for session ${sessionId}...`);
-              
-              // 1. Status: Capturing
-              await updateStatus('Capturing', sessionId);
+          const cmd = res.data.command;
+          
+          if (cmd === 'trigger') {
+            console.log('⚡ Received TRIGGER command!');
+            
+            // Get current session ID to upload to
+            try {
+              const sessionRes = await axios.get(`${API_URL}/api/session/current`);
+              if (sessionRes.data.active) {
+                const sessionId = sessionRes.data.sessionId;
+                console.log(`📸 Capturing for session ${sessionId}...`);
+                
+                // 1. Status: Capturing
+                await updateStatus('Capturing', sessionId);
 
-              try {
-                const filePath = await capturePhoto(simulate);
-                console.log(`✅ Captured: ${filePath}`);
-                
-                // 2. Status: Uploading
-                await updateStatus('Uploading', sessionId);
-                
-                await uploadPhoto(filePath, sessionId);
-                
-                // 3. Status: Ready (Done)
-                await updateStatus('Ready', sessionId);
-              } catch (err) {
-                console.error('❌ Capture/Upload failed:', err.message);
-                await updateStatus('Error', sessionId);
+                try {
+                  const filePath = await capturePhoto(simulate);
+                  console.log(`✅ Captured: ${filePath}`);
+                  
+                  // 2. Status: Uploading
+                  await updateStatus('Uploading', sessionId);
+                  
+                  await uploadPhoto(filePath, sessionId);
+                  
+                  // 3. Status: Ready (Done)
+                  await updateStatus('Ready', sessionId);
+                } catch (err) {
+                  console.error('❌ Capture/Upload failed:', err.message);
+                  await updateStatus('Error', sessionId);
+                }
+              } else {
+                console.log('⚠️ Trigger received but no active session');
               }
-            } else {
-              console.log('⚠️ Trigger received but no active session');
+            } catch (err) {
+              console.error('❌ Failed to process trigger:', err.message);
             }
-          } catch (err) {
-            console.error('❌ Failed to process trigger:', err.message);
           }
-        }
-      } catch (err) {
-        // Ignore network errors during polling to keep running
-        if (err.code !== 'ECONNREFUSED') {
-          console.error('Polling error:', err.message);
+        } catch (err) {
+          // Ignore network errors/timeouts and retry
+          if (err.code !== 'ECONNREFUSED' && err.code !== 'ECONNABORTED') {
+            console.error('Polling error:', err.message);
+          }
+          // Small delay before retry on error to prevent spamming
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-    }, 100); // Poll every 100ms (0.1s)
+    };
+
+    // Start the loop
+    pollLoop();
   }
   else if (args[0] === 'start-session') {
     // Start a new session

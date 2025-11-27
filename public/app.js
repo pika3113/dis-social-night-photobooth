@@ -110,7 +110,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         pollInterval = setInterval(async () => {
             try {
-                const res = await fetch('/api/session/current');
+                // Pass currentSessionId to ensure we track the right session even if server restarts
+                const url = currentSessionId 
+                    ? `/api/session/current?sessionId=${currentSessionId}`
+                    : '/api/session/current';
+                    
+                const res = await fetch(url);
                 const data = await res.json();
                 
                 if (data.active) {
