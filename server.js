@@ -408,10 +408,6 @@ app.post('/api/session/trigger', async (req, res) => {
     res.status(500).json({ error: errorMsg || 'Trigger failed', success: false });
   }
 });
-    message: success ? '📸 Cheese! Waiting for camera...' : 'Trigger queued (check logs if using watcher)',
-    error: errorMsg || undefined
-  });
-});
 
 // Endpoint for Watcher Script to poll for commands
 app.get('/api/session/command', (req, res) => {
