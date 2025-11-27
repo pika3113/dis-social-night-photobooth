@@ -200,7 +200,15 @@ async function main() {
                   // 2. Status: Uploading
                   await updateStatus('Uploading', sessionId);
                   
-                  await uploadPhoto(filePath, sessionId);
+                  // If running locally with the server, let the server's watcher handle the upload
+                  // to avoid double-uploading.
+                  if (API_URL.includes('localhost') || API_URL.includes('127.0.0.1')) {
+                    console.log('🏠 Localhost detected: Skipping remote upload (Server watcher will handle it)');
+                    // Give server a moment to process
+                    await new Promise(r => setTimeout(r, 2000));
+                  } else {
+                    await uploadPhoto(filePath, sessionId);
+                  }
                   
                   // 3. Status: Ready (Done)
                   await updateStatus('Ready', sessionId);
