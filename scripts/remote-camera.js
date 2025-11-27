@@ -165,6 +165,14 @@ async function main() {
               console.error('❌ Failed to process trigger:', err.message);
             }
           }
+          else if (cmd === 'session_start') {
+            console.log(`\n🎬 NEW SESSION STARTED: ${res.data.sessionId}`);
+            console.log('   Waiting for trigger...');
+          }
+          else if (cmd === 'session_finish') {
+            console.log(`\n🏁 SESSION FINISHED: ${res.data.sessionId}`);
+            console.log('   Returning to idle mode...');
+          }
         } catch (err) {
           // Ignore network errors/timeouts and retry
           if (err.code !== 'ECONNREFUSED' && err.code !== 'ECONNABORTED') {

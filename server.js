@@ -422,7 +422,8 @@ app.get('/api/session/command', async (req, res) => {
     // 1. Check if command exists
     if (commandQueue.length > 0) {
       const cmd = commandQueue.shift(); // Get oldest command
-      return res.json({ command: cmd.type });
+      // Return full command object so we can pass data like sessionId
+      return res.json({ command: cmd.type, ...cmd });
     }
 
     // 2. If long-polling enabled and time remains, wait and retry
@@ -466,6 +467,10 @@ app.post('/api/session/start', (req, res) => {
   };
 
   console.log(`🎬 Session started: ${newSessionId}`);
+  
+  // Notify remote camera
+  commandQueue.push({ type: 'session_start', sessionId: newSessionId });
+  
   res.json({ success: true, sessionId: newSessionId });
 });
 
@@ -576,6 +581,9 @@ app.post('/api/session/finish', async (req, res) => {
     }, clearDelay);
 
     console.log(`🏁 Session finished: ${sessionId} with ${photoCount} photos`);
+
+    // Notify remote camera
+    commandQueue.push({ type: 'session_finish', sessionId: sessionId });
 
     res.json({
       success: true,
