@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentPhotoCount = 0;
                 sessionGallery.innerHTML = '';
                 switchView('session');
-                updateStatus('Ready! Click trigger or upload photos.', false);
+                updateStatus('Ready!', false);
                 startPolling();
             } else {
                 updateStatus(`❌ ${data.error || 'Could not start session'}`, true);

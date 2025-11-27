@@ -5,9 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "electron": "electron electron-main.js",
     "dev": "nodemon server.js",
-    "watcher": "node scripts/camera-watcher.js"
+    "remote": "node scripts/remote-camera.js"
   },
   "keywords": [
     "photobooth",

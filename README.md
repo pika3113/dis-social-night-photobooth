@@ -95,8 +95,6 @@ photobooth-webapp/
 
 This app is designed to run on Vercel's hobby plan. Photos are stored in Cloudinary (free tier).
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
-
 **Quick Deploy:**
 1. Sign up for [Cloudinary](https://cloudinary.com) (free)
 2. Get your credentials from the Cloudinary dashboard
