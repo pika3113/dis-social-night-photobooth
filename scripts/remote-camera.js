@@ -9,6 +9,14 @@ const axios = require('axios');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary (Direct Upload)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // Use explicit Vercel URL (required for remote camera)
 const API_URL = process.env.VERCEL_URL || process.env.API_URL || 'https://dis-social-night-photobooth.vercel.app';
@@ -16,6 +24,7 @@ let currentSessionId = null;
 
 console.log(`🎥 Remote Camera Script`);
 console.log(`📡 API URL: ${API_URL}`);
+console.log(`☁️  Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Configured' : 'Missing Credentials'}`);
 
 // Helper: Execute gphoto2 command (or simulate)
 function capturePhoto(simulate = false) {
@@ -56,21 +65,29 @@ function capturePhoto(simulate = false) {
   });
 }
 
-// Send photo to API
+// Upload photo directly to Cloudinary, then notify API
 async function uploadPhoto(filePath, sessionId) {
   try {
-    const fileStream = fs.createReadStream(filePath);
-    const FormData = require('form-data');
-    const formData = new FormData();
+    console.log('☁️  Uploading directly to Cloudinary...');
+    const photoId = `capture_${Date.now()}`;
     
-    formData.append('photos', fileStream);
-    formData.append('sessionId', sessionId);
-    
-    const response = await axios.post(`${API_URL}/api/upload`, formData, {
-      headers: formData.getHeaders()
+    // 1. Upload to Cloudinary directly
+    const result = await cloudinary.uploader.upload(filePath, {
+      folder: `dis social night 2025/${sessionId}`,
+      public_id: photoId,
+      resource_type: 'auto'
     });
     
-    console.log(`✅ Photo uploaded to session ${sessionId}`);
+    console.log(`✅ Cloudinary Upload Success: ${result.secure_url}`);
+
+    // 2. Notify Vercel API with the URL (lightweight request)
+    const response = await axios.post(`${API_URL}/api/upload`, {
+      sessionId: sessionId,
+      cloudinaryUrl: result.secure_url,
+      publicId: result.public_id
+    });
+    
+    console.log(`✅ API Notified for session ${sessionId}`);
     fs.unlinkSync(filePath); // Clean up temp file
     return response.data;
   } catch (err) {
@@ -121,7 +138,7 @@ async function main() {
           console.error('Polling error:', err.message);
         }
       }
-    }, 1000);
+    }, 100); // Poll every 100ms (0.1s)
   }
   else if (args[0] === 'start-session') {
     // Start a new session

@@ -534,9 +534,37 @@ app.post('/api/session/finish', async (req, res) => {
   }
 });
 
-// Upload multiple photos endpoint
+// Upload multiple photos endpoint (Supports files OR direct URLs)
 app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
   try {
+    // Handle direct URL upload (from remote camera script)
+    if (req.body.cloudinaryUrl && req.body.sessionId) {
+      const { sessionId, cloudinaryUrl, publicId } = req.body;
+      
+      if (!photosDatabase[sessionId]) {
+        // Create session if missing (shouldn't happen often)
+        photosDatabase[sessionId] = {
+          photos: [],
+          isSinglePhoto: false,
+          uploadDate: new Date(),
+          isActive: true,
+          createdAt: Date.now()
+        };
+      }
+
+      const photoId = publicId || `capture_${Date.now()}`;
+      
+      photosDatabase[sessionId].photos.push({
+        cloudinaryUrl: cloudinaryUrl,
+        cloudinaryPublicId: publicId,
+        photoId: photoId,
+        timestamp: Date.now()
+      });
+      
+      console.log(`✅ Photo URL added to session ${sessionId} (Direct Upload)`);
+      return res.json({ success: true, sessionId });
+    }
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded', success: false });
     }
@@ -544,6 +572,11 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
     // Determine Session ID: Use active session if available, otherwise create new (legacy/drag-drop)
     let sessionId = activeSessionId;
     let isNewSession = false;
+
+    // Allow sessionId override from body
+    if (req.body.sessionId) {
+      sessionId = req.body.sessionId;
+    }
 
     if (!sessionId) {
       sessionId = generateShortId();
