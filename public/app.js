@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSessionActive = false;
 
     // Configuration
-    const POLL_INTERVAL = 2000; // Poll every 2 seconds
+    const POLL_INTERVAL = 1000; // Poll every 1 second (faster updates)
     const POLL_TIMEOUT = 30000; // Stop polling after 30s of no active session
     let lastActivityTime = 0;
 
