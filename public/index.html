@@ -3,55 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Photobooth</title>
+  <title>DIS Social Night 2025</title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    .landing-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 20px;
+    }
+    .code-input-wrapper {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 40px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      max-width: 400px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      background: linear-gradient(45deg, #ff6b6b, #feca57);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p {
+      color: #aaa;
+      margin-bottom: 30px;
+    }
+    input {
+      width: 100%;
+      padding: 15px;
+      font-size: 1.5em;
+      text-align: center;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      background: rgba(0, 0, 0, 0.3);
+      border: 2px solid #444;
+      border-radius: 10px;
+      color: white;
+      margin-bottom: 20px;
+      transition: border-color 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #feca57;
+    }
+    button {
+      width: 100%;
+      padding: 15px;
+      font-size: 1.2em;
+      font-weight: bold;
+      background: linear-gradient(45deg, #ff6b6b, #feca57);
+      border: none;
+      border-radius: 10px;
+      color: #1a1a1a;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: scale(1.02);
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    
-    <!-- VIEW 1: START SCREEN -->
-    <div id="view-start" class="view-section">
-      <h1>Photobooth</h1>
-      <p class="subtitle">Ready to capture some memories?</p>
-      <button id="btn-start" class="btn primary large-btn">Start</button>
+  <div class="landing-container">
+    <div class="code-input-wrapper">
+      <h1>DIS Social Night</h1>
+      <p>Enter your 4-character code to view photos</p>
       
-
+      <input type="text" id="code-input" placeholder="CODE" maxlength="4">
+      <button id="btn-go">View Photos</button>
     </div>
-
-    <!-- VIEW 2: SESSION ACTIVE -->
-    <div id="view-session" class="view-section hidden">
-      <h1>Say Cheese!</h1>
-      <div class="controls">
-        <button id="btn-trigger-dslr" class="btn primary">📸 Take photo</button>
-        <button id="btn-finish" class="btn secondary" style="background: #666;">Finish</button>
-      </div>
-      
-      <div id="status-message" class="status-text">Waiting for photos...</div>
-      
-      <div id="session-gallery" class="live-gallery">
-        <!-- Photos appear here dynamically -->
-      </div>
-    </div>
-
-    <!-- VIEW 3: RESULT / QR -->
-    <div id="view-result" class="view-section hidden">
-      <h1>All Done!</h1>
-      <div class="qr-wrapper">
-        <img id="qr-image" src="" alt="QR Code">
-      </div>
-      <p>Scan to download your photos!</p>
-      <a id="download-link" href="#" target="_blank" class="link">Open Gallery</a>
-      
-      <div id="session-code-display" style="margin-top: 20px; font-size: 2em; font-weight: bold; letter-spacing: 5px; color: #fff; background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; display: inline-block;">
-        <!-- CODE GOES HERE -->
-      </div>
-
-      <br><br>
-      <button id="btn-done" class="btn primary">Done (Next Person)</button>
-    </div>
-
   </div>
 
-  <script src="/app.js"></script>
+  <script>
+    const input = document.getElementById('code-input');
+    const btn = document.getElementById('btn-go');
+
+    function goToGallery() {
+      const code = input.value.trim().toUpperCase();
+      if (code.length === 4) {
+        window.location.href = `/${code}`;
+      } else {
+        input.style.borderColor = '#ff6b6b';
+        setTimeout(() => input.style.borderColor = '#444', 500);
+      }
+    }
+
+    btn.addEventListener('click', goToGallery);
+    
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') goToGallery();
+    });
+  </script>
 </body>
 </html>

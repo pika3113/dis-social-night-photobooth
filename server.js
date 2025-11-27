@@ -827,6 +827,11 @@ app.get('/api/photo/:photoId', async (req, res) => {
   }
 });
 
+// Serve photobooth UI at /photobooth
+app.get('/photobooth', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'photobooth.html'));
+});
+
 // Short URL redirect
 app.get('/:sessionId', async (req, res) => {
   const { sessionId } = req.params;
