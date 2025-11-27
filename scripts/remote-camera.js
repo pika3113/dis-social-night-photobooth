@@ -26,6 +26,19 @@ console.log(`🎥 Remote Camera Script`);
 console.log(`📡 API URL: ${API_URL}`);
 console.log(`☁️  Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Configured' : 'Missing Credentials'}`);
 
+// Helper: Send status update to API
+async function updateStatus(status, sessionId) {
+  try {
+    await axios.post(`${API_URL}/api/session/status`, {
+      status,
+      sessionId
+    });
+    console.log(`ℹ️  Status updated: ${status}`);
+  } catch (err) {
+    console.error(`⚠️ Failed to update status: ${err.message}`);
+  }
+}
+
 // Helper: Execute gphoto2 command (or simulate)
 function capturePhoto(simulate = false) {
   return new Promise((resolve, reject) => {
@@ -121,10 +134,24 @@ async function main() {
               const sessionId = sessionRes.data.sessionId;
               console.log(`📸 Capturing for session ${sessionId}...`);
               
-              const filePath = await capturePhoto(simulate);
-              console.log(`✅ Captured: ${filePath}`);
-              
-              await uploadPhoto(filePath, sessionId);
+              // 1. Status: Capturing
+              await updateStatus('Capturing', sessionId);
+
+              try {
+                const filePath = await capturePhoto(simulate);
+                console.log(`✅ Captured: ${filePath}`);
+                
+                // 2. Status: Uploading
+                await updateStatus('Uploading', sessionId);
+                
+                await uploadPhoto(filePath, sessionId);
+                
+                // 3. Status: Ready (Done)
+                await updateStatus('Ready', sessionId);
+              } catch (err) {
+                console.error('❌ Capture/Upload failed:', err.message);
+                await updateStatus('Error', sessionId);
+              }
             } else {
               console.log('⚠️ Trigger received but no active session');
             }

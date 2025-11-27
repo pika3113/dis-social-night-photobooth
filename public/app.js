@@ -27,7 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Configuration
     const POLL_INTERVAL = 1000; // Poll every 1 second (faster updates)
     const POLL_TIMEOUT = 30000; // Stop polling after 30s of no active session
+    const TRIGGER_TIMEOUT = 10000; // Reset "Waiting..." message after 10s
     let lastActivityTime = 0;
+    let triggerTimeoutId = null;
 
     // --- Event Listeners ---
 
@@ -61,6 +63,14 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (data.success) {
                 updateStatus('📸 Cheese! Waiting for camera...', false);
+                
+                // Set timeout to reset message if photo doesn't arrive
+                if (triggerTimeoutId) clearTimeout(triggerTimeoutId);
+                triggerTimeoutId = setTimeout(() => {
+                    if (statusMessage.innerText.includes('Waiting for camera')) {
+                        updateStatus('⚠️ Photo taking too long. Try again?', true);
+                    }
+                }, TRIGGER_TIMEOUT);
             } else {
                 updateStatus(`❌ ${data.error || 'Trigger failed'}`, true);
             }
@@ -107,10 +117,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastActivityTime = Date.now();
                     isSessionActive = true;
                     
+                    // Update status message based on remote camera status
+                    if (data.status && data.status !== 'Ready') {
+                        if (data.status === 'Capturing') {
+                            updateStatus('📸 Camera is capturing...', false);
+                        } else if (data.status === 'Uploading') {
+                            updateStatus('☁️  Uploading photo...', false);
+                        } else {
+                            updateStatus(`ℹ️  ${data.status}`, false);
+                        }
+                    }
+
                     if (data.photos && data.photos.length > currentPhotoCount) {
                         updateGallery(data.photos);
                         currentPhotoCount = data.photos.length;
-                        updateStatus(`📸 ${currentPhotoCount} photo${currentPhotoCount !== 1 ? 's' : ''} captured!`, false);
+                        updateStatus(`✅ ${currentPhotoCount} photo${currentPhotoCount !== 1 ? 's' : ''} captured!`, false);
+                        
+                        // Clear timeout if photo arrived
+                        if (triggerTimeoutId) {
+                            clearTimeout(triggerTimeoutId);
+                            triggerTimeoutId = null;
+                        }
                     }
                 } else {
                     // Session is no longer active

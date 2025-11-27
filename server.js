@@ -441,11 +441,28 @@ app.post('/api/session/start', (req, res) => {
     isSinglePhoto: false,
     uploadDate: new Date(),
     isActive: true,
+    status: 'Ready', // New status field
     createdAt: Date.now()
   };
 
   console.log(`🎬 Session started: ${newSessionId}`);
   res.json({ success: true, sessionId: newSessionId });
+});
+
+// Update session status (from remote camera)
+app.post('/api/session/status', (req, res) => {
+  const { status, sessionId } = req.body;
+  
+  // Use active session if not provided
+  const targetSessionId = sessionId || activeSessionId;
+  
+  if (targetSessionId && photosDatabase[targetSessionId]) {
+    photosDatabase[targetSessionId].status = status;
+    console.log(`ℹ️  Session ${targetSessionId} status: ${status}`);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Session not found', success: false });
+  }
 });
 
 // Get current session status (polling)
@@ -459,7 +476,8 @@ app.get('/api/session/current', (req, res) => {
     active: true,
     sessionId: activeSessionId,
     photoCount: session.photos.length,
-    photos: session.photos
+    photos: session.photos,
+    status: session.status || 'Ready'
   });
 });
 
