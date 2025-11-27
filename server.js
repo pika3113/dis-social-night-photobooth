@@ -72,16 +72,50 @@ if (!process.env.VERCEL && !fs.existsSync(CAPTURED_FOLDER)) {
 
 // Store photo metadata (in production, use a database like MongoDB/PostgreSQL)
 const photosDatabase = {};
-let photoCounter = 1;
+const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
+
+// Load sessions from disk (Persistence)
+if (fs.existsSync(SESSIONS_FILE)) {
+  try {
+    const data = fs.readFileSync(SESSIONS_FILE, 'utf8');
+    const loaded = JSON.parse(data);
+    // Restore dates from strings
+    for (const key in loaded) {
+      if (loaded[key].uploadDate) loaded[key].uploadDate = new Date(loaded[key].uploadDate);
+    }
+    Object.assign(photosDatabase, loaded);
+    console.log(`📂 Loaded ${Object.keys(photosDatabase).length} sessions from disk`);
+  } catch (err) {
+    console.error('❌ Failed to load sessions:', err);
+  }
+}
+
+function saveSessions() {
+  // Only save in local/dev mode or if explicitly enabled, to avoid Vercel read-only errors
+  if (!process.env.VERCEL) {
+    try {
+      fs.writeFileSync(SESSIONS_FILE, JSON.stringify(photosDatabase, null, 2));
+    } catch (err) {
+      console.error('❌ Failed to save sessions:', err);
+    }
+  }
+}
+
 let activeSessionId = null; // Global state for the current active session
 let commandQueue = []; // Queue for commands to the watcher script
 const uploadQueue = []; // Queue for failed uploads (offline resilience)
 
-// Generate short ID (base36 for max efficiency)
-function generateShortId() {
-  const id = photoCounter.toString(36).padStart(4, '0');
-  photoCounter++;
-  return id;
+// Generate random 4-char ID (Alphabets/Numbers, no ambiguous chars)
+function generateSessionId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = '';
+  do {
+    result = '';
+    for (let i = 0; i < 4; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+  } while (photosDatabase[result]); // Ensure uniqueness
+  return result;
 }
 
 // ===== UTILITY FUNCTIONS =====
@@ -134,8 +168,8 @@ function cleanupOldSessions() {
   }
 }
 
-// Run cleanup every hour
-setInterval(cleanupOldSessions, SESSION_CLEANUP_INTERVAL);
+// Run cleanup every hour (DISABLED for persistence)
+// setInterval(cleanupOldSessions, SESSION_CLEANUP_INTERVAL);
 
 // ===== SIMULATED CAMERA (DEV MODE) =====
 function createSimulatedPhoto() {
@@ -225,6 +259,7 @@ function initializeFileWatcher() {
           photoId: photoId,
           timestamp: Date.now()
         });
+        saveSessions(); // Persist
         console.log(`✅ Photo added to session ${activeSessionId}`);
       }
     } catch (err) {
@@ -341,6 +376,7 @@ app.post('/api/session/trigger', async (req, res) => {
             photoId: photoId,
             timestamp: Date.now()
           });
+          saveSessions(); // Persist
           console.log(`✅ Photo added to session ${activeSessionId}`);
           success = true;
         }
@@ -461,7 +497,7 @@ app.post('/api/session/start', (req, res) => {
     activeSessionId = null;
   }
 
-  const newSessionId = generateShortId();
+  const newSessionId = generateSessionId();
   activeSessionId = newSessionId;
   
   // Initialize file watcher if not already watching
@@ -476,6 +512,8 @@ app.post('/api/session/start', (req, res) => {
     status: 'Ready', // New status field
     createdAt: Date.now()
   };
+  
+  saveSessions(); // Persist
 
   console.log(`🎬 Session started: ${newSessionId}`);
   
@@ -512,6 +550,7 @@ app.post('/api/session/status', (req, res) => {
   }
   
   photosDatabase[sessionId].status = status;
+  saveSessions(); // Persist
   console.log(`ℹ️  Session ${sessionId} status: ${status}`);
   res.json({ success: true });
 });
@@ -588,8 +627,8 @@ app.post('/api/session/finish', async (req, res) => {
     activeSessionId = null;
 
     // OPTIMIZATION: Clear session data after photos uploaded
-    // In dev mode: keep for 30 minutes for testing
-    // In production: keep for ~5 minutes since QR generated = photos uploaded
+    // DISABLED for persistence: User wants to keep history unless manually cleared
+    /*
     const clearDelay = DEV_MODE ? 1800000 : 300000; // 30 min vs 5 min
     setTimeout(() => {
       if (photosDatabase[sessionId]) {
@@ -597,6 +636,7 @@ app.post('/api/session/finish', async (req, res) => {
         console.log(`🧹 Cleared session ${sessionId} (photos already in Cloudinary)`);
       }
     }, clearDelay);
+    */
 
     console.log(`🏁 Session finished: ${sessionId} with ${photoCount} photos`);
 
@@ -643,6 +683,7 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
         timestamp: Date.now()
       });
       
+      saveSessions(); // Persist
       console.log(`✅ Photo URL added to session ${sessionId} (Direct Upload)`);
       return res.json({ success: true, sessionId });
     }
@@ -661,7 +702,7 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
     }
 
     if (!sessionId) {
-      sessionId = generateShortId();
+      sessionId = generateSessionId();
       isNewSession = true;
     }
 
@@ -729,6 +770,7 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
       }));
 
     photosDatabase[sessionId].photos.push(...newPhotos);
+    saveSessions(); // Persist
 
     // Response
     if (isNewSession) {
