@@ -37,14 +37,38 @@ This guide explains how to connect your Sony a7IV to the photobooth web app for 
     ```bash
     # Syntax: node scripts/camera-watcher.js <PATH_TO_CAPTURE_FOLDER> <YOUR_WEBSITE_UPLOAD_URL>
     
-    # Example (Mac/Linux):
-    node scripts/camera-watcher.js ~/Desktop/photobooth-captures https://your-app-name.vercel.app/api/upload
+    # OPTION 1: If running locally (testing on your laptop)
+    # Use this URL: http://localhost:3000/api/upload
+    node scripts/camera-watcher.js ~/Desktop/photobooth-captures http://localhost:3000/api/upload
     
-    # Example (Windows):
-    node scripts/camera-watcher.js "C:\Users\You\Desktop\photobooth-captures" https://your-app-name.vercel.app/api/upload
+    # OPTION 2: If running on Vercel (live website)
+    # Use your Vercel URL + /api/upload
+    node scripts/camera-watcher.js ~/Desktop/photobooth-captures https://your-project-name.vercel.app/api/upload
     ```
 
+## Step 4: (Optional) Remote Trigger Setup
+
+If you want the "Take Photo" button on the website to actually fire your camera, you need to configure the trigger in `scripts/camera-watcher.js`.
+
+### Option A: Using `gphoto2` (Recommended for Mac/Linux)
+This is the most reliable method but requires closing Sony Imaging Edge.
+
+1.  Install gphoto2: `brew install gphoto2` (Mac) or `sudo apt install gphoto2` (Linux).
+2.  Edit `scripts/camera-watcher.js` and uncomment the **Option 1** block.
+3.  Restart the watcher script.
+
+### Option B: Using Sony Imaging Edge (Mac Only)
+This uses AppleScript to simulate pressing "Enter" in the Remote app.
+
+1.  Open `scripts/camera-watcher.js`.
+2.  Uncomment the **Option 2** block.
+3.  Make sure the "Remote" app is running.
+
+### Option C: Windows
+Triggering on Windows is harder. You may need to use a tool like AutoHotKey and call it from the script.
+
 ## How it Works
+...existing code...
 
 1.  You take a photo with the Sony a7IV.
 2.  Imaging Edge transfers the photo to your `photobooth-captures` folder.

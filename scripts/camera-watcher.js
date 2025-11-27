@@ -9,11 +9,16 @@ const { exec } = require('child_process');
 const WATCH_FOLDER = process.argv[2] || './captured'; // Folder to watch
 const UPLOAD_URL = process.argv[3] || 'http://localhost:3000/api/upload'; // Server URL
 
+// Derive Command URL from Upload URL
+const BASE_URL = UPLOAD_URL.replace('/api/upload', '');
+const COMMAND_URL = `${BASE_URL}/api/session/command`;
+
 console.log(`
 📸 Camera Watcher Started
 -----------------------
 Watching: ${WATCH_FOLDER}
 Uploading to: ${UPLOAD_URL}
+Listening for triggers at: ${COMMAND_URL}
 -----------------------
 Waiting for new photos...
 `);
@@ -21,6 +26,54 @@ Waiting for new photos...
 // Ensure watch folder exists
 if (!fs.existsSync(WATCH_FOLDER)) {
   fs.mkdirSync(WATCH_FOLDER, { recursive: true });
+}
+
+// --- Polling for Remote Trigger ---
+setInterval(async () => {
+  try {
+    const response = await axios.get(COMMAND_URL);
+    if (response.data.command === 'capture') {
+      console.log('\n📸 Received REMOTE TRIGGER command!');
+      triggerCamera();
+    }
+  } catch (error) {
+    // Silent fail on connection errors to avoid spam
+  }
+}, 1000);
+
+function triggerCamera() {
+  console.log('⚡ Triggering Camera...');
+  
+  // OPTION 1: gphoto2 (Best for Mac/Linux)
+  // Requires: brew install gphoto2
+  // exec('gphoto2 --capture-image-and-download --filename "' + path.join(WATCH_FOLDER, 'capture-%H%M%S.jpg') + '"', (err, stdout, stderr) => {
+  //   if (err) console.error('Trigger failed:', stderr);
+  //   else console.log('Trigger success:', stdout);
+  // });
+
+  // OPTION 2: Sony Imaging Edge (Mac AppleScript)
+  // Requires: Imaging Edge "Remote" app to be open and focused
+  /*
+  if (process.platform === 'darwin') {
+    const script = `
+      tell application "Remote" to activate
+      tell application "System Events" to keystroke return
+    `;
+    exec(`osascript -e '${script}'`, (err) => {
+      if (err) console.error('AppleScript failed:', err);
+    });
+  }
+  */
+
+  // OPTION 3: Windows PowerShell (Simulate Enter key)
+  /*
+  if (process.platform === 'win32') {
+    // This is tricky and requires a specific window title
+    console.log('Windows trigger not implemented yet. Please press the shutter manually.');
+  }
+  */
+ 
+  console.log('⚠️  No trigger method configured! Edit scripts/camera-watcher.js to enable gphoto2 or keypress simulation.');
 }
 
 // Initialize watcher

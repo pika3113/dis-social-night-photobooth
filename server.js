@@ -6,6 +6,9 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
+const { exec } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -13,6 +16,11 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+console.log(`[DEBUG] Cloudinary config loaded:`);
+console.log(`  - cloud_name: ${cloudinary.config().cloud_name ? '✓ SET' : '✗ MISSING'}`);
+console.log(`  - api_key: ${cloudinary.config().api_key ? '✓ SET' : '✗ MISSING'}`);
+console.log(`  - api_secret: ${cloudinary.config().api_secret ? '✓ SET' : '✗ MISSING'}`);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,9 +47,31 @@ const upload = multer({
   }
 });
 
+// ===== CONFIGURATION =====
+const CAPTURED_FOLDER = path.join(__dirname, 'captured');
+const CAMERA_TRIGGER_TIMEOUT = 5000; // 5s timeout for camera command
+const CAMERA_TRIGGER_RETRIES = 3; // Retry failed triggers 3 times
+const SESSION_CLEANUP_INTERVAL = 3600000; // Clean old sessions every 1 hour
+const SESSION_EXPIRY_TIME = 86400000; // Keep sessions for 24 hours
+const UPLOAD_RETRY_ATTEMPTS = 3; // Retry failed uploads 3 times
+const UPLOAD_RETRY_DELAY = 1000; // Wait 1s between retries
+const DEV_MODE = process.env.DEV_MODE === 'true' || process.env.DEV_MODE === 'TRUE' || process.env.DEV_MODE === '1'; // Enable simulated camera
+
+console.log(`[DEBUG] DEV_MODE env var: "${process.env.DEV_MODE}"`);
+console.log(`[DEBUG] DEV_MODE enabled: ${DEV_MODE}`);
+
+// Ensure captured folder exists
+if (!fs.existsSync(CAPTURED_FOLDER)) {
+  fs.mkdirSync(CAPTURED_FOLDER, { recursive: true });
+  console.log(`📁 Created captured folder: ${CAPTURED_FOLDER}`);
+}
+
 // Store photo metadata (in production, use a database like MongoDB/PostgreSQL)
 const photosDatabase = {};
 let photoCounter = 1;
+let activeSessionId = null; // Global state for the current active session
+let commandQueue = []; // Queue for commands to the watcher script
+const uploadQueue = []; // Queue for failed uploads (offline resilience)
 
 // Generate short ID (base36 for max efficiency)
 function generateShortId() {
@@ -50,69 +80,528 @@ function generateShortId() {
   return id;
 }
 
-// Upload multiple photos endpoint
-app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
+// ===== UTILITY FUNCTIONS =====
+
+// Get local IP address (for QR codes)
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+// Sleep utility
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Retry logic wrapper
+async function retryAsync(fn, retries = CAMERA_TRIGGER_RETRIES, delay = 500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.log(`⚠️  Attempt ${i + 1} failed, retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
+}
+
+// Cleanup old sessions from memory
+function cleanupOldSessions() {
+  const now = Date.now();
+  let deletedCount = 0;
+  
+  for (const [sessionId, session] of Object.entries(photosDatabase)) {
+    if (now - session.uploadDate.getTime() > SESSION_EXPIRY_TIME) {
+      delete photosDatabase[sessionId];
+      deletedCount++;
+    }
+  }
+  
+  if (deletedCount > 0) {
+    console.log(`🧹 Cleaned up ${deletedCount} expired sessions`);
+  }
+}
+
+// Run cleanup every hour
+setInterval(cleanupOldSessions, SESSION_CLEANUP_INTERVAL);
+
+// ===== SIMULATED CAMERA (DEV MODE) =====
+function createSimulatedPhoto() {
+  // Use the real test image from Testing folder
+  const testImagePath = path.join(__dirname, 'Testing', 'Myanmar_Protest.jpg');
+  if (fs.existsSync(testImagePath)) {
+    return fs.readFileSync(testImagePath);
+  }
+  
+  // Fallback: Create a minimal valid JPEG if test image not found
+  const minimalJpeg = Buffer.from(
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8VAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=',
+    'base64'
+  );
+  return minimalJpeg;
+}
+
+function simulateCameraCapture() {
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
+    const filename = path.join(CAPTURED_FOLDER, `simulated-${Date.now()}.jpg`);
+    const buffer = createSimulatedPhoto();
+    fs.writeFileSync(filename, buffer);
+    console.log(`📸 [DEV] Simulated photo saved: ${path.basename(filename)}`);
+  } catch (err) {
+    console.error(`❌ [DEV] Failed to create simulated photo:`, err.message);
+  }
+}
+
+// ===== FILE WATCHER FOR PHOTO DETECTION (LOCAL ONLY) =====
+let fileWatcher = null;
+
+function initializeFileWatcher() {
+  // Skip file watcher on Vercel (no local filesystem access)
+  if (process.env.VERCEL) {
+    return;
+  }
+  
+  // Only initialize if chokidar is available
+  let chokidar;
+  try {
+    chokidar = require('chokidar');
+  } catch (err) {
+    console.warn('⚠️  File watcher skipped (chokidar not available)');
+    return;
+  }
+  
+  if (fileWatcher) return; // Already watching
+  
+  fileWatcher = chokidar.watch(CAPTURED_FOLDER, {
+    ignored: /(^|[\/\\])\./,
+    persistent: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 2000,
+      pollInterval: 100
+    }
+  });
+
+  fileWatcher.on('add', async (filePath) => {
+    console.log(`🆕 Photo detected: ${path.basename(filePath)}`);
+    
+    if (!activeSessionId || !photosDatabase[activeSessionId]) {
+      console.log('⚠️  No active session, skipping upload');
+      return;
     }
 
-    const sessionId = generateShortId();
-    const isSinglePhoto = req.files.length === 1;
-    
-    // Upload all files to Cloudinary
-    const uploadPromises = req.files.map((file, index) => {
-      const photoId = isSinglePhoto ? sessionId : `${sessionId}_${index + 1}`;
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const photoId = `capture_${Date.now()}`;
       
-      return new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: `dis social night 2025/${sessionId}`,
-            public_id: photoId,
-            resource_type: 'auto'
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve({ photoId, result });
+      const uploadResult = await uploadToCloudinaryWithRetry(
+        buffer,
+        activeSessionId,
+        photoId
+      );
+
+      if (uploadResult) {
+        photosDatabase[activeSessionId].photos.push({
+          cloudinaryUrl: uploadResult.secure_url,
+          cloudinaryPublicId: uploadResult.public_id,
+          photoId: photoId,
+          timestamp: Date.now()
+        });
+        console.log(`✅ Photo added to session ${activeSessionId}`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to upload detected photo: ${err.message}`);
+      // Queue for retry
+      uploadQueue.push({ filePath, sessionId: activeSessionId, attempts: 0 });
+    }
+  });
+
+  console.log(`👁️  File watcher initialized for ${CAPTURED_FOLDER}`);
+}
+
+// ===== CLOUDINARY UPLOAD WITH RETRY =====
+async function uploadToCloudinaryWithRetry(buffer, sessionId, photoId, attempt = 1) {
+  try {
+    const Readable = require('stream').Readable;
+    return await new Promise((resolve, reject) => {
+      // Create a readable stream from buffer
+      const stream = Readable.from(buffer);
+      
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `dis social night 2025/${sessionId}`,
+          public_id: photoId,
+          resource_type: 'auto',
+          timeout: CAMERA_TRIGGER_TIMEOUT
+        },
+        (error, result) => {
+          if (error) {
+            console.log(`📤 Upload callback error (attempt ${attempt}):`, error.message);
+            reject(error);
+          } else {
+            console.log(`✅ Upload success for ${photoId}:`, result.secure_url);
+            resolve(result);
           }
-        );
-        uploadStream.end(file.buffer);
+        }
+      );
+      
+      uploadStream.on('error', (err) => {
+        console.log(`📤 Upload stream error (attempt ${attempt}):`, err.message);
+        reject(err);
       });
+      stream.pipe(uploadStream);
     });
+  } catch (err) {
+    if (attempt < UPLOAD_RETRY_ATTEMPTS) {
+      console.log(`⚠️  Upload attempt ${attempt} failed, retrying... (${err.message})`);
+      await sleep(UPLOAD_RETRY_DELAY);
+      return uploadToCloudinaryWithRetry(buffer, sessionId, photoId, attempt + 1);
+    }
+    console.log(`❌ Upload failed after ${UPLOAD_RETRY_ATTEMPTS} attempts: ${err.message}`);
+    throw err;
+  }
+}
 
-    const uploads = await Promise.all(uploadPromises);
-    console.log(`✅ Uploaded ${uploads.length} photo(s) to Cloudinary`);
-
-    // For single photo: link directly to image
-    // For multiple: link to folder/session
-    const shortUrl = isSinglePhoto 
-      ? `${req.protocol}://${req.get('host')}/${sessionId}`
-      : `${req.protocol}://${req.get('host')}/${sessionId}`;
+// ===== PROCESS RETRY QUEUE PERIODICALLY =====
+setInterval(async () => {
+  while (uploadQueue.length > 0) {
+    const { filePath, sessionId, attempts } = uploadQueue.shift();
     
-    // Generate QR code
+    if (attempts >= UPLOAD_RETRY_ATTEMPTS) {
+      console.log(`❌ Gave up on ${filePath} after ${attempts} attempts`);
+      continue;
+    }
+
+    try {
+      if (fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath);
+        const photoId = `retry_${Date.now()}`;
+        
+        const result = await uploadToCloudinaryWithRetry(buffer, sessionId, photoId);
+        console.log(`✅ Retry successful for ${path.basename(filePath)}`);
+      }
+    } catch (err) {
+      console.log(`⚠️  Retry failed, re-queueing...`);
+      uploadQueue.push({ filePath, sessionId, attempts: attempts + 1 });
+    }
+  }
+}, 5000); // Retry queue every 5 seconds
+
+// --- Session Management Endpoints ---
+
+// Trigger the camera (Watcher script picks this up OR direct execution)
+app.post('/api/session/trigger', async (req, res) => {
+  console.log('📸 Trigger requested');
+
+  if (!activeSessionId) {
+    return res.status(400).json({ error: 'No active session', success: false });
+  }
+
+  let success = false;
+  let errorMsg = '';
+
+  // DEV MODE: Use simulated camera
+  if (DEV_MODE) {
+    console.log('🎮 [DEV MODE] Using simulated camera');
+    simulateCameraCapture();
+    success = true;
+  }
+  // PRODUCTION: Direct Execution (If running locally/Electron)
+  else if (process.env.IS_ELECTRON || process.env.LOCAL_TRIGGER) {
+    console.log('⚡ Executing direct trigger command...');
+    
+    try {
+      await retryAsync(async () => {
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Camera trigger timeout'));
+          }, CAMERA_TRIGGER_TIMEOUT);
+
+          if (process.platform === 'win32') {
+            const filename = path.join(CAPTURED_FOLDER, `capture-${Date.now()}.jpg`);
+            const cmd = `CameraControlCmd.exe /capture /filename "${filename}"`;
+            
+            exec(cmd, { timeout: CAMERA_TRIGGER_TIMEOUT }, (err, stdout) => {
+              clearTimeout(timeout);
+              if (err) reject(err);
+              else {
+                console.log('✅ Direct trigger success');
+                resolve();
+              }
+            });
+          } else {
+            // Mac/Linux (gphoto2)
+            exec(
+              `gphoto2 --capture-image-and-download --filename "${path.join(CAPTURED_FOLDER, 'capture-%H%M%S.jpg')}"`,
+              { timeout: CAMERA_TRIGGER_TIMEOUT },
+              (err) => {
+                clearTimeout(timeout);
+                if (err) reject(err);
+                else {
+                  console.log('✅ Direct trigger success');
+                  resolve();
+                }
+              }
+            );
+          }
+        });
+      }, CAMERA_TRIGGER_RETRIES, 1000);
+      
+      success = true;
+    } catch (err) {
+      errorMsg = err.message;
+      console.error('❌ Direct trigger failed after retries:', err.message);
+    }
+  }
+
+  // METHOD 2: Command Queue (For Watcher Script)
+  // Always push to queue so watcher can pick it up
+  commandQueue.push({ type: 'capture', timestamp: Date.now() });
+  
+  res.json({
+    success: success || true,
+    message: success ? '📸 Cheese! Waiting for camera...' : 'Trigger queued (check logs if using watcher)',
+    error: errorMsg || undefined
+  });
+});
+
+// Endpoint for Watcher Script to poll for commands
+app.get('/api/session/command', (req, res) => {
+  if (commandQueue.length > 0) {
+    const cmd = commandQueue.shift(); // Get oldest command
+    return res.json({ command: cmd.type });
+  }
+  res.json({ command: null });
+});
+
+// Start a new session
+app.post('/api/session/start', (req, res) => {
+  // GUARD: Prevent session collision
+  if (activeSessionId && photosDatabase[activeSessionId]?.isActive) {
+    return res.status(409).json({
+      error: 'A session is already active',
+      activeSessionId: activeSessionId,
+      success: false
+    });
+  }
+
+  const newSessionId = generateShortId();
+  activeSessionId = newSessionId;
+  
+  // Initialize file watcher if not already watching
+  initializeFileWatcher();
+  
+  // Initialize session in database
+  photosDatabase[newSessionId] = {
+    photos: [],
+    isSinglePhoto: false,
+    uploadDate: new Date(),
+    isActive: true,
+    createdAt: Date.now()
+  };
+
+  console.log(`🎬 Session started: ${newSessionId}`);
+  res.json({ success: true, sessionId: newSessionId });
+});
+
+// Get current session status (polling)
+app.get('/api/session/current', (req, res) => {
+  if (!activeSessionId || !photosDatabase[activeSessionId]) {
+    return res.json({ active: false });
+  }
+
+  const session = photosDatabase[activeSessionId];
+  res.json({
+    active: true,
+    sessionId: activeSessionId,
+    photoCount: session.photos.length,
+    photos: session.photos
+  });
+});
+
+// Finish current session
+app.post('/api/session/finish', async (req, res) => {
+  if (!activeSessionId) {
+    return res.status(400).json({ error: 'No active session', success: false });
+  }
+
+  const sessionId = activeSessionId;
+  const session = photosDatabase[sessionId];
+  
+  // VALIDATION: Prevent finishing with 0 photos
+  if (!session.photos || session.photos.length === 0) {
+    return res.status(400).json({
+      error: 'Cannot finish with 0 photos. Take at least one photo.',
+      success: false,
+      photoCount: 0
+    });
+  }
+
+  try {
+    // Build URL with local IP detection
+    let baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // If localhost, try to use local IP for mobile QR scanning
+    if (req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1')) {
+      const localIp = getLocalIp();
+      if (localIp !== 'localhost') {
+        baseUrl = `http://${localIp}:${PORT}`;
+      }
+    }
+    
+    const shortUrl = `${baseUrl}/${sessionId}`;
     const qrCodeDataUrl = await QRCode.toDataURL(shortUrl);
-    
-    // Store session metadata
-    photosDatabase[sessionId] = {
-      photos: uploads.map(u => ({
-        cloudinaryUrl: u.result.secure_url,
-        cloudinaryPublicId: u.result.public_id,
-        photoId: u.photoId
-      })),
-      isSinglePhoto,
-      uploadDate: new Date()
-    };
+
+    const photoCount = session.photos.length;
+
+    // Mark as inactive
+    session.isActive = false;
+    activeSessionId = null;
+
+    // OPTIMIZATION: Clear session data after photos uploaded
+    // In dev mode: keep for 30 minutes for testing
+    // In production: keep for ~5 minutes since QR generated = photos uploaded
+    const clearDelay = DEV_MODE ? 1800000 : 300000; // 30 min vs 5 min
+    setTimeout(() => {
+      if (photosDatabase[sessionId]) {
+        delete photosDatabase[sessionId];
+        console.log(`🧹 Cleared session ${sessionId} (photos already in Cloudinary)`);
+      }
+    }, clearDelay);
+
+    console.log(`🏁 Session finished: ${sessionId} with ${photoCount} photos`);
 
     res.json({
       success: true,
       sessionId: sessionId,
       qrCode: qrCodeDataUrl,
       downloadUrl: shortUrl,
-      photoCount: uploads.length
+      photoCount: photoCount
     });
+  } catch (err) {
+    console.error('Error finishing session:', err);
+    res.status(500).json({ error: 'Failed to finish session', success: false });
+  }
+});
+
+// Upload multiple photos endpoint
+app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded', success: false });
+    }
+
+    // Determine Session ID: Use active session if available, otherwise create new (legacy/drag-drop)
+    let sessionId = activeSessionId;
+    let isNewSession = false;
+
+    if (!sessionId) {
+      sessionId = generateShortId();
+      isNewSession = true;
+    }
+
+    const isSinglePhoto = req.files.length === 1 && isNewSession;
+    
+    // Upload all files to Cloudinary with retry logic
+    const uploadPromises = req.files.map(async (file, index) => {
+      const suffix = isNewSession ? (index + 1) : Date.now() + index; 
+      const photoId = isSinglePhoto ? sessionId : `${sessionId}_${suffix}`;
+      
+      try {
+        const result = await uploadToCloudinaryWithRetry(
+          file.buffer,
+          sessionId,
+          photoId
+        );
+        return { photoId, result, success: true };
+      } catch (err) {
+        console.error(`❌ Failed to upload photo ${photoId}:`, err.message);
+        // Queue for retry
+        uploadQueue.push({
+          buffer: file.buffer,
+          sessionId,
+          photoId,
+          attempts: 0
+        });
+        return { photoId, result: null, success: false, error: err.message };
+      }
+    });
+
+    const uploads = await Promise.all(uploadPromises);
+    const successfulUploads = uploads.filter(u => u.success);
+    const failedCount = uploads.length - successfulUploads.length;
+
+    if (successfulUploads.length > 0) {
+      console.log(`✅ Uploaded ${successfulUploads.length}/${uploads.length} photo(s) (Session: ${sessionId})`);
+    } else {
+      console.error(`❌ All uploads failed, queued for retry`);
+      return res.status(500).json({
+        error: 'Upload failed, will retry',
+        success: false,
+        queued: true,
+        failedCount
+      });
+    }
+
+    // Update Database
+    if (!photosDatabase[sessionId]) {
+      photosDatabase[sessionId] = {
+        photos: [],
+        isSinglePhoto,
+        uploadDate: new Date(),
+        isActive: !isNewSession,
+        createdAt: Date.now()
+      };
+    }
+
+    const newPhotos = successfulUploads
+      .filter(u => u.result)
+      .map(u => ({
+        cloudinaryUrl: u.result.secure_url,
+        cloudinaryPublicId: u.result.public_id,
+        photoId: u.photoId,
+        timestamp: Date.now()
+      }));
+
+    photosDatabase[sessionId].photos.push(...newPhotos);
+
+    // Response
+    if (isNewSession) {
+      // Legacy behavior: Return QR code immediately
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const shortUrl = `${baseUrl}/${sessionId}`;
+      const qrCodeDataUrl = await QRCode.toDataURL(shortUrl);
+      
+      res.json({
+        success: true,
+        sessionId: sessionId,
+        qrCode: qrCodeDataUrl,
+        downloadUrl: shortUrl,
+        photoCount: successfulUploads.length,
+        failedCount: failedCount > 0 ? failedCount : undefined,
+        message: failedCount > 0 ? `${failedCount} photos queued for retry` : undefined
+      });
+    } else {
+      // Session behavior: Just confirm upload
+      res.json({
+        success: true,
+        sessionId: sessionId,
+        message: 'Added to active session',
+        photoCount: photosDatabase[sessionId].photos.length,
+        failedCount: failedCount > 0 ? failedCount : undefined
+      });
+    }
+
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to upload photos' });
+    res.status(500).json({ error: 'Failed to upload photos', success: false });
   }
 });
 
@@ -254,8 +743,25 @@ function generateGalleryPage(session, sessionId) {
 
 // Start server only if not in Vercel
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`Photobooth server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, () => {
+    const modeStr = DEV_MODE ? '🎮 DEV (Simulated)' : '🎥 PRODUCTION';
+    console.log(`
+╔═══════════════════════════════════════╗
+║  Photobooth Server Running            ║
+╠═══════════════════════════════════════╣
+║  URL: http://localhost:${PORT}${' '.repeat(19 - PORT.toString().length)}║
+║  Mode: ${modeStr}${' '.repeat(28 - modeStr.length)}║
+╚═══════════════════════════════════════╝
+    `);
+  });
+
+  // Graceful shutdown on Ctrl+C
+  process.on('SIGINT', () => {
+    console.log('\n👋 Shutting down gracefully...');
+    server.close(() => {
+      console.log('✅ Server stopped');
+      process.exit(0);
+    });
   });
 }
 
