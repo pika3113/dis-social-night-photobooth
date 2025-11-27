@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download Your Photo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📸 Your Photo</h1>
+    <p class="subtitle">Download your photobooth picture</p>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p class="loading-text">Loading your photo...</p>
+    </div>
+
+    <div class="error" id="error">
+      <h2>⚠️ Photo Not Found</h2>
+      <p>This photo may have been removed or the link is invalid.</p>
+    </div>
+
+    <div class="photo-container" id="photoContainer">
+      <img id="photo" class="photo" alt="Your Photo">
+      
+      <div class="photo-info" id="photoInfo">
+        <p><strong>Uploaded:</strong> <span id="uploadDate"></span></p>
+      </div>
+
+      <a id="downloadBtn" class="btn btn-secondary" download>
+        ⬇️ Download Photo
+      </a>
+      <br>
+      <a href="/" class="btn">📷 Take Another Photo</a>
+    </div>
+  </div>
+
+  <script>
+    const loading = document.getElementById('loading');
+    const error = document.getElementById('error');
+    const photoContainer = document.getElementById('photoContainer');
+    const photo = document.getElementById('photo');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const uploadDate = document.getElementById('uploadDate');
+
+    // Get photo ID from URL
+    const pathParts = window.location.pathname.split('/');
+    const photoId = pathParts[pathParts.length - 1];
+
+    async function loadPhoto() {
+      try {
+        const response = await fetch(`/api/photo/${photoId}`);
+        
+        if (!response.ok) {
+          throw new Error('Photo not found');
+        }
+
+        const data = await response.json();
+        
+        // Set photo source from Cloudinary
+        photo.src = data.cloudinaryUrl;
+        
+        // Set download link
+        downloadBtn.href = `/api/download/${photoId}`;
+        downloadBtn.download = `photo-${photoId}.jpg`;
+        
+        // Format upload date
+        const date = new Date(data.uploadDate);
+        uploadDate.textContent = date.toLocaleString();
+        
+        // Show photo container
+        loading.style.display = 'none';
+        photoContainer.style.display = 'block';
+      } catch (err) {
+        console.error('Error loading photo:', err);
+        loading.style.display = 'none';
+        error.style.display = 'block';
+      }
+    }
+
+    // Load photo on page load
+    loadPhoto();
+  </script>
+</body>
+</html>

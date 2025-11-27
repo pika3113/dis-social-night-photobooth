@@ -1,0 +1,286 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #ca9700 -50%,#f4313f 150%);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.container {
+  background: white;
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 10px;
+  font-size: 2.5em;
+}
+
+.subtitle {
+  text-align: center;
+  color: #666;
+  margin-bottom: 30px;
+  font-size: 1.1em;
+}
+
+.upload-area {
+  border: 3px dashed #667eea;
+  border-radius: 15px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #f8f9ff;
+}
+
+.upload-area:hover {
+  border-color: #764ba2;
+  background: #f0f1ff;
+}
+
+.upload-area.dragover {
+  border-color: #764ba2;
+  background: #e8e9ff;
+  transform: scale(1.02);
+}
+
+.upload-icon {
+  font-size: 4em;
+  margin-bottom: 20px;
+}
+
+.upload-text {
+  font-size: 1.2em;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.upload-hint {
+  font-size: 0.9em;
+  color: #888;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+.btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 15px 40px;
+  border-radius: 50px;
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-top: 20px;
+  width: 100%;
+  font-weight: bold;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.preview-container {
+  margin-top: 30px;
+  text-align: center;
+  display: none;
+}
+
+.preview-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.preview-image {
+  max-width: 150px;
+  max-height: 150px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.photo-count {
+  text-align: center;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.qr-container {
+  background: white;
+  padding: 30px;
+  border-radius: 15px;
+  display: none;
+  margin-top: 30px;
+  border: 2px solid #667eea;
+}
+
+.qr-code {
+  max-width: 300px;
+  margin: 20px auto;
+  display: block;
+}
+
+.download-url {
+  background: #f8f9ff;
+  padding: 15px;
+  border-radius: 10px;
+  word-break: break-all;
+  margin-top: 20px;
+  font-family: monospace;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.success-message {
+  text-align: center;
+  color: #28a745;
+  font-size: 1.3em;
+  margin-bottom: 20px;
+  font-weight: bold;
+}
+
+.loading {
+  display: none;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  background: #ffebee;
+  color: #c62828;
+  padding: 15px;
+  border-radius: 10px;
+  margin-top: 20px;
+  display: none;
+}
+
+/* Download page styles */
+.photo-container {
+  margin: 30px 0;
+  display: none;
+}
+
+.photo {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  margin-bottom: 30px;
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.photo-info {
+  background: #f8f9ff;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  font-size: 0.95em;
+  color: #555;
+}
+
+.photo-info p {
+  margin: 5px 0;
+}
+
+.loading-text {
+  color: #667eea;
+  font-size: 1.1em;
+}
+
+.error {
+  display: none;
+  background: #ffebee;
+  color: #c62828;
+  padding: 20px;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+
+.error h2 {
+  margin-bottom: 10px;
+}
+
+/* Gallery page styles */
+.gallery-dark-body {
+  background: #1a1a1a;
+  font-family: Arial, sans-serif;
+}
+
+.gallery-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.gallery-title {
+  color: white;
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.gallery-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #2a2a2a;
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-item a {
+  display: block;
+  text-decoration: none;
+}

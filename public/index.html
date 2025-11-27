@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photobooth - Upload</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📸 Photobooth</h1>
+    <p class="subtitle">Upload your photo and get a QR code to share!</p>
+
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-icon">📷</div>
+      <div class="upload-text">Click or drag and drop to upload photos</div>
+      <div class="upload-hint">Supports: JPG, PNG, GIF (Max 10MB per file) • Select multiple files</div>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+    </div>
+
+    <div class="preview-container" id="previewContainer">
+      <div class="preview-images" id="previewImages"></div>
+      <p class="photo-count" id="photoCount"></p>
+      <button class="btn" id="uploadBtn">Upload Photos</button>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p class="loading-text">Uploading...</p>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <div class="qr-container" id="qrContainer">
+      <div class="success-message">✅ Photo Uploaded Successfully!</div>
+      <p style="text-align: center; font-size: 1.2em; margin-bottom: 10px; color: #333;">
+        <strong>Scan to Download</strong>
+      </p>
+      <img id="qrCode" class="qr-code" alt="QR Code">
+      <div class="download-url">
+        <strong>Download Link:</strong><br>
+        <span id="downloadUrl"></span>
+      </div>
+      <button class="btn" onclick="location.reload()">Upload Another Photo</button>
+    </div>
+  </div>
+
+  <script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const previewContainer = document.getElementById('previewContainer');
+    const previewImage = document.getElementById('previewImage');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const qrContainer = document.getElementById('qrContainer');
+    const qrCode = document.getElementById('qrCode');
+    const downloadUrl = document.getElementById('downloadUrl');
+    const loading = document.getElementById('loading');
+    const errorMessage = document.getElementById('errorMessage');
+
+    let selectedFiles = [];
+
+    // Click to upload
+    uploadArea.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    // File selection
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(Array.from(e.target.files));
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      handleFiles(Array.from(e.dataTransfer.files));
+    });
+
+    function handleFiles(files) {
+      const validFiles = files.filter(file => {
+        if (!file.type.startsWith('image/')) {
+          return false;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          showError(`${file.name} is too large (max 10MB)`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validFiles.length === 0) {
+        showError('Please select valid image files');
+        return;
+      }
+
+      selectedFiles = validFiles;
+      const previewImagesContainer = document.getElementById('previewImages');
+      const photoCount = document.getElementById('photoCount');
+      
+      previewImagesContainer.innerHTML = '';
+      
+      validFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.className = 'preview-image';
+          previewImagesContainer.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      photoCount.textContent = `${validFiles.length} photo${validFiles.length > 1 ? 's' : ''} selected`;
+      previewContainer.style.display = 'block';
+      uploadArea.style.display = 'none';
+      errorMessage.style.display = 'none';
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      if (selectedFiles.length === 0) return;
+
+      const formData = new FormData();
+      selectedFiles.forEach(file => {
+        formData.append('photos', file);
+      });
+
+      uploadBtn.disabled = true;
+      loading.style.display = 'block';
+      errorMessage.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          qrCode.src = data.qrCode;
+          downloadUrl.textContent = data.downloadUrl;
+          
+          previewContainer.style.display = 'none';
+          loading.style.display = 'none';
+          qrContainer.style.display = 'block';
+        } else {
+          throw new Error(data.error || 'Upload failed');
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        showError(error.message || 'Failed to upload photos. Please try again.');
+        uploadBtn.disabled = false;
+        loading.style.display = 'none';
+      }
+    });
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorMessage.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
