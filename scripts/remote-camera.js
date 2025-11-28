@@ -9,7 +9,37 @@ const axios = require('axios');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cloudinary = require('cloudinary').v2;
+const chokidar = require('chokidar');
+const EventEmitter = require('events');
+
+// Event emitter for watcher
+const cameraEvents = new EventEmitter();
+
+// Watcher Configuration
+const WATCH_DIR = path.join(__dirname, '../captured');
+if (!fs.existsSync(WATCH_DIR)) {
+  fs.mkdirSync(WATCH_DIR, { recursive: true });
+}
+
+// Initialize Watcher
+const watcher = chokidar.watch(WATCH_DIR, {
+  ignored: /(^|[\/\\])\../,
+  persistent: true,
+  ignoreInitial: true,
+  awaitWriteFinish: {
+    stabilityThreshold: 2000,
+    pollInterval: 100
+  }
+});
+
+watcher.on('add', filePath => {
+  console.log(`📸 New photo detected: ${filePath}`);
+  cameraEvents.emit('photo', filePath);
+});
+
+console.log(`👀 Watching for photos in: ${WATCH_DIR}`);
 
 // Configure Cloudinary (Direct Upload)
 cloudinary.config({
@@ -42,18 +72,16 @@ async function updateStatus(status, sessionId) {
 // Helper: Execute gphoto2 command (or simulate)
 function capturePhoto(simulate = false) {
   return new Promise((resolve, reject) => {
-    const filename = path.join('/tmp', `camera-${Date.now()}.jpg`);
-    
+    // SIMULATION
     if (simulate) {
-      // SIMULATION: Copy a test image instead of using camera
+      const filename = path.join(os.tmpdir(), `camera-${Date.now()}.jpg`);
       const testImage = path.join(__dirname, '../Testing/Myanmar_Protest.jpg');
       
       if (fs.existsSync(testImage)) {
         fs.copyFileSync(testImage, filename);
         console.log('🤖 [SIMULATION] Copied test image');
-        setTimeout(() => resolve(filename), 1000); // Fake delay
+        setTimeout(() => resolve(filename), 1000);
       } else {
-        // Create minimal JPEG if test image missing
         const minimalJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8VAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=', 'base64');
         fs.writeFileSync(filename, minimalJpeg);
         console.log('🤖 [SIMULATION] Created minimal JPEG');
@@ -62,19 +90,41 @@ function capturePhoto(simulate = false) {
       return;
     }
 
-    // REAL CAMERA
-    exec(`gphoto2 --capture-image-and-download --filename ${filename}`, (err, stdout) => {
+    // REAL CAMERA (Watcher + Trigger Automation)
+    console.log('⚡ Triggering Sony Camera...');
+    
+    // 1. Set up a one-time listener for the next photo
+    let photoDetected = false;
+    
+    const photoListener = (filePath) => {
+      photoDetected = true;
+      resolve(filePath);
+    };
+    
+    cameraEvents.once('photo', photoListener);
+
+    // 2. Trigger the camera via PowerShell (Automate Sony Remote App)
+    const psScript = path.join(__dirname, 'trigger-sony.ps1');
+    const cmd = `powershell -ExecutionPolicy Bypass -File "${psScript}"`;
+    
+    exec(cmd, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`Camera capture failed: ${err.message}`));
-        return;
-      }
-      
-      if (fs.existsSync(filename)) {
-        resolve(filename);
+        console.error(`⚠️ Trigger script error: ${err.message}`);
+        console.error(`   (Make sure Sony Imaging Edge 'Remote' window is open)`);
+        // Don't reject immediately, maybe the user presses the button manually?
+        // But if the script fails, we should probably warn.
       } else {
-        reject(new Error('Photo file not created'));
+        console.log(stdout.trim());
       }
     });
+
+    // 3. Set a timeout (e.g., 10 seconds)
+    setTimeout(() => {
+      if (!photoDetected) {
+        cameraEvents.removeListener('photo', photoListener);
+        reject(new Error('Timeout: No photo detected after 10 seconds.'));
+      }
+    }, 10000);
   });
 }
 
@@ -150,7 +200,15 @@ async function main() {
                   // 2. Status: Uploading
                   await updateStatus('Uploading', sessionId);
                   
-                  await uploadPhoto(filePath, sessionId);
+                  // If running locally with the server, let the server's watcher handle the upload
+                  // to avoid double-uploading.
+                  if (API_URL.includes('localhost') || API_URL.includes('127.0.0.1')) {
+                    console.log('🏠 Localhost detected: Skipping remote upload (Server watcher will handle it)');
+                    // Give server a moment to process
+                    await new Promise(r => setTimeout(r, 2000));
+                  } else {
+                    await uploadPhoto(filePath, sessionId);
+                  }
                   
                   // 3. Status: Ready (Done)
                   await updateStatus('Ready', sessionId);

@@ -32,7 +32,8 @@ npm start
 Or for development with auto-restart:
 ```bash
 npm run dev
-npm run remote listen -- --simulate
+npm run remote listen
+ipconfig
 ```
 
 3. Open your browser and navigate to:
