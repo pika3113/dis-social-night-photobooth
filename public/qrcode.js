@@ -1,31 +1,57 @@
 document.addEventListener('DOMContentLoaded', () => {
     const contentDiv = document.getElementById('content');
-    let lastSessionId = null;
+    let lastSessionsHash = ''; // Simple way to detect changes
 
-    async function checkLastSession() {
+    async function checkRecentSessions() {
         try {
-            const res = await fetch('/api/session/last-finished');
+            const res = await fetch('/api/session/recent-finished');
             const data = await res.json();
 
-            if (data.success && data.sessionId !== lastSessionId) {
-                lastSessionId = data.sessionId;
-                updateDisplay(data);
+            if (data.success) {
+                // Create a simple hash of session IDs to detect changes
+                const currentHash = data.sessions.map(s => s.sessionId).join(',');
+                
+                if (currentHash !== lastSessionsHash) {
+                    lastSessionsHash = currentHash;
+                    updateDisplay(data.sessions);
+                }
             }
         } catch (err) {
-            console.error('Error fetching last session:', err);
+            console.error('Error fetching recent sessions:', err);
         }
     }
 
-    function updateDisplay(data) {
+    function updateDisplay(sessions) {
+        if (sessions.length === 0) {
+            contentDiv.innerHTML = '<div class="loading">Waiting for completed session...</div>';
+            return;
+        }
+
+        // Sort so oldest is on the right (reverse of the API which returns newest first)
+        // API returns [Newest, Middle, Oldest]
+        // We want display: [Newest, Middle, Oldest] -> Flex row
+        // Wait, user asked: "oldest one is on the right"
+        // So Left: Newest, Right: Oldest.
+        // The API returns [Newest, Older, Oldest].
+        // So we just map them in order.
+
+        const cardsHtml = sessions.map((session, index) => `
+            <div class="qr-card ${index === 0 ? 'latest' : ''}">
+                <div class="qr-label">${index === 0 ? 'Latest Session' : 'Previous Session'}</div>
+                <img src="${session.qrCode}" class="qr-image" alt="QR Code">
+                <div class="session-code">${session.sessionId}</div>
+                <p class="instruction-small">Scan to download</p>
+            </div>
+        `).join('');
+
         contentDiv.innerHTML = `
-            <p class="instruction">Scan to download photos</p>
-            <img src="${data.qrCode}" class="qr-image" alt="QR Code">
-            <p class="sub-instruction">Session Code</p>
-            <div class="session-code">${data.sessionId}</div>
+            <div class="qr-grid">
+                ${cardsHtml}
+            </div>
         `;
     }
 
     // Poll every 2 seconds
-    setInterval(checkLastSession, 2000);
-    checkLastSession(); // Initial check
+    setInterval(checkRecentSessions, 2000);
+    checkRecentSessions(); // Initial check
 });

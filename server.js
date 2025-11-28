@@ -196,7 +196,13 @@ function simulateCameraCapture() {
       return;
     }
     
-    const filename = path.join(CAPTURED_FOLDER, `simulated-${Date.now()}.jpg`);
+    let saveDir = CAPTURED_FOLDER;
+    if (activeSessionId) {
+      saveDir = path.join(CAPTURED_FOLDER, activeSessionId);
+      if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
+    }
+
+    const filename = path.join(saveDir, `simulated-${Date.now()}.jpg`);
     const buffer = createSimulatedPhoto();
     fs.writeFileSync(filename, buffer);
     console.log(`[DEV-SIM] Simulated photo saved: ${path.basename(filename)}`);
@@ -228,6 +234,7 @@ function initializeFileWatcher() {
   fileWatcher = chokidar.watch(CAPTURED_FOLDER, {
     ignored: /(^|[\/\\])\./,
     persistent: true,
+    ignoreInitial: true,
     awaitWriteFinish: {
       stabilityThreshold: 2000,
       pollInterval: 100
@@ -240,6 +247,31 @@ function initializeFileWatcher() {
     if (!activeSessionId || !photosDatabase[activeSessionId]) {
       console.log('[WARN] No active session, skipping upload');
       return;
+    }
+
+    // Check if file is in root of captured folder
+    const relativePath = path.relative(CAPTURED_FOLDER, filePath);
+    const inSubDir = path.dirname(relativePath) !== '.';
+
+    if (!inSubDir) {
+      // Move to session folder
+      const sessionDir = path.join(CAPTURED_FOLDER, activeSessionId);
+      if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir, { recursive: true });
+      }
+      
+      const newPath = path.join(sessionDir, path.basename(filePath));
+      
+      try {
+        // Wait briefly for file lock release
+        await sleep(100);
+        fs.renameSync(filePath, newPath);
+        console.log(`[MOVE] Moved photo to ${activeSessionId}/${path.basename(filePath)}`);
+        return; // Watcher will trigger again for new path
+      } catch (err) {
+        console.error(`[ERR] Failed to move file: ${err.message}`);
+        // Continue to upload from original location if move failed
+      }
     }
 
     try {
@@ -401,8 +433,15 @@ app.post('/api/session/trigger', async (req, res) => {
             reject(new Error('Camera trigger timeout'));
           }, CAMERA_TRIGGER_TIMEOUT);
 
+          // Determine save path
+          let saveDir = CAPTURED_FOLDER;
+          if (activeSessionId) {
+            saveDir = path.join(CAPTURED_FOLDER, activeSessionId);
+            if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
+          }
+
           if (process.platform === 'win32') {
-            const filename = path.join(CAPTURED_FOLDER, `capture-${Date.now()}.jpg`);
+            const filename = path.join(saveDir, `capture-${Date.now()}.jpg`);
             const cmd = `CameraControlCmd.exe /capture /filename "${filename}"`;
             
             exec(cmd, { timeout: CAMERA_TRIGGER_TIMEOUT }, (err, stdout) => {
@@ -415,7 +454,7 @@ app.post('/api/session/trigger', async (req, res) => {
             });
           } else {
             // Mac/Linux (gphoto2)
-            const filename = path.join(CAPTURED_FOLDER, `capture-${Date.now()}.jpg`);
+            const filename = path.join(saveDir, `capture-${Date.now()}.jpg`);
             const cmd = `gphoto2 --capture-image-and-download --filename "${filename}"`;
             
             exec(cmd, { timeout: CAMERA_TRIGGER_TIMEOUT }, (err, stdout) => {
@@ -907,6 +946,44 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to upload photos', success: false });
+  }
+});
+
+// Get last 3 finished sessions for QR display
+app.get('/api/session/recent-finished', async (req, res) => {
+  try {
+    // Filter for sessions that are NOT active (finished)
+    // Sort by uploadDate descending (newest first)
+    const finishedSessions = Object.entries(photosDatabase)
+      .map(([id, session]) => ({ id, ...session }))
+      .filter(s => !s.isActive) // Only finished sessions
+      .sort((a, b) => b.uploadDate - a.uploadDate) // Newest first
+      .slice(0, 3); // Take top 3
+
+    if (finishedSessions.length === 0) {
+      return res.json({ success: true, sessions: [] });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Generate QR codes for each
+    const sessionsWithQr = await Promise.all(finishedSessions.map(async (session) => {
+      const shortUrl = `${baseUrl}/${session.id}`;
+      const qrCode = await QRCode.toDataURL(shortUrl);
+      return {
+        sessionId: session.id,
+        qrCode: qrCode,
+        timestamp: session.uploadDate
+      };
+    }));
+
+    res.json({
+      success: true,
+      sessions: sessionsWithQr
+    });
+  } catch (err) {
+    console.error('Error fetching recent sessions:', err);
+    res.status(500).json({ error: 'Failed to fetch recent sessions', success: false });
   }
 });
 

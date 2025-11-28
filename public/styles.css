@@ -414,11 +414,13 @@ body {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  position: relative;
 }
 
 .btn-capture-circle .btn-icon-large {
   font-size: 6em;
   line-height: 1;
+  transition: opacity 0.2s;
 }
 
 .btn-capture-circle .btn-text {
@@ -426,6 +428,18 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 2px;
+  transition: font-size 0.2s;
+}
+
+/* When counting down (text is a number), make it huge */
+.btn-capture-circle.counting-down .btn-icon-large {
+  display: none;
+}
+
+.btn-capture-circle.counting-down .btn-text {
+  font-size: 12em;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .btn-capture-circle:hover {
@@ -1001,5 +1015,96 @@ body.qr-page {
 
 .waiting-state p {
   margin: 0.5rem 0;
+}
+
+/* QR Page Layout */
+.qr-page {
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.qr-container-wide {
+  width: 100%;
+  max-width: 1600px;
+  padding: var(--spacing-lg);
+}
+
+.qr-grid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.qr-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s ease;
+  opacity: 0.7;
+  transform: scale(0.9);
+}
+
+.qr-card.latest {
+  opacity: 1;
+  transform: scale(1.1);
+  border-color: var(--primary-light);
+  box-shadow: 0 0 30px rgba(102, 126, 234, 0.3);
+  z-index: 10;
+}
+
+.qr-label {
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.qr-card.latest .qr-label {
+  color: var(--primary-light);
+  font-weight: 700;
+}
+
+.qr-image {
+  width: 250px;
+  height: 250px;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-sm);
+  background: white;
+  padding: 10px;
+}
+
+.qr-card.latest .qr-image {
+  width: 350px;
+  height: 350px;
+}
+
+.session-code {
+  font-size: 2em;
+  font-weight: 800;
+  letter-spacing: 4px;
+  margin-bottom: var(--spacing-xs);
+}
+
+.instruction-small {
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.loading {
+  font-size: 2em;
+  color: var(--text-muted);
+  animation: pulse 2s infinite;
 }
 

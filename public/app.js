@@ -27,20 +27,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentPhotoCount = 0;
     let currentSessionId = null;
     let isSessionActive = false;
+    let isCountingDown = false;
+    let isTriggering = false;
 
     // Configuration
-    const POLL_INTERVAL = 1000; // Poll every 1 second (faster updates)
+    const POLL_INTERVAL = 200; // Poll every 200ms (very fast updates)
     const POLL_TIMEOUT = 30000; // Stop polling after 30s of no active session
     const TRIGGER_TIMEOUT = 10000; // Reset "Waiting..." message after 10s
     let lastActivityTime = 0;
     let triggerTimeoutId = null;
+    let countdownTimeoutId = null; // Track countdown timer
 
     // --- Event Listeners ---
 
     buttons.start.addEventListener('click', startSession);
     buttons.triggerDslr.addEventListener('click', triggerDslr);
     buttons.finish.addEventListener('click', finishSession);
-    buttons.done.addEventListener('click', resetToStart);
+    // "Start Next Session" should immediately start a new session, skipping the start screen
+    buttons.done.addEventListener('click', startSession); 
     if (buttons.cancel) buttons.cancel.addEventListener('click', cancelSession);
 
     // Event delegation for delete buttons
@@ -76,6 +80,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function stopCountdown() {
+        if (countdownTimeoutId) {
+            clearTimeout(countdownTimeoutId);
+            countdownTimeoutId = null;
+        }
+        isCountingDown = false;
+        isTriggering = false;
+        buttons.triggerDslr.classList.remove('counting-down');
+        buttons.triggerDslr.disabled = false;
+        const btnText = document.getElementById('capture-btn-text');
+        if (btnText) btnText.textContent = 'Capture';
+    }
+
     async function triggerDslr() {
         if (!isSessionActive) {
             updateStatus('❌ No active session', true);
@@ -84,37 +101,95 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Disable button immediately
         buttons.triggerDslr.disabled = true;
+        isCountingDown = true;
+        buttons.triggerDslr.classList.add('counting-down'); // Add class for big numbers
         const btnText = document.getElementById('capture-btn-text');
-        if (btnText) btnText.textContent = 'Wait...';
+        
+        // 3-Second Countdown
+        let countdown = 3;
+        let triggerSent = false; // Flag to ensure we don't send twice
+        
+        const runCountdown = () => {
+            // Abort if session is no longer active
+            if (!isSessionActive) {
+                stopCountdown();
+                return;
+            }
 
-        try {
-            updateStatus('🔄 Sending trigger signal...', false);
-            const res = await fetch('/api/session/trigger', { method: 'POST' });
-            const data = await res.json();
-            
-            if (data.success) {
-                updateStatus('📸 Cheese! Waiting for camera...', false);
+            if (countdown > 0) {
+                if (btnText) btnText.textContent = countdown;
+                updateStatus(`📸 Smile! ${countdown}...`, false);
                 
-                // Set timeout to reset message if photo doesn't arrive
-                if (triggerTimeoutId) clearTimeout(triggerTimeoutId);
-                triggerTimeoutId = setTimeout(() => {
-                    if (statusMessage.innerText.includes('Waiting for camera')) {
-                        updateStatus('⚠️ Photo taking too long. Try again?', true);
-                        buttons.triggerDslr.disabled = false; // Re-enable on timeout
-                        if (btnText) btnText.textContent = 'Capture';
-                    }
-                }, TRIGGER_TIMEOUT);
+                // Latency compensation: Trigger 0.5s before the end (when countdown is 1)
+                if (countdown === 1) {
+                    setTimeout(() => {
+                        // Only trigger if we haven't been cancelled
+                        if (isSessionActive && isCountingDown) {
+                            console.log('Pre-triggering camera (latency compensation)...');
+                            performTrigger();
+                            triggerSent = true;
+                        }
+                    }, 300);
+                }
+
+                countdown--;
+                countdownTimeoutId = setTimeout(runCountdown, 1000);
             } else {
-                updateStatus(`❌ ${data.error || 'Trigger failed'}`, true);
+                // Countdown finished
+                isCountingDown = false;
+                buttons.triggerDslr.classList.remove('counting-down'); // Remove class
+                isTriggering = true;
+                if (btnText) btnText.textContent = 'Wait...';
+                
+                // Only trigger if we haven't already (fallback)
+                if (!triggerSent) {
+                    performTrigger();
+                }
+            }
+        };
+
+        const performTrigger = async () => {
+            // Double check session active before triggering
+            if (!isSessionActive) {
+                stopCountdown();
+                return;
+            }
+
+            try {
+                updateStatus('🔄 Sending trigger signal...', false);
+                const res = await fetch('/api/session/trigger', { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    updateStatus('📸 Cheese! Waiting for camera...', false);
+                    
+                    // Set timeout to reset message if photo doesn't arrive
+                    if (triggerTimeoutId) clearTimeout(triggerTimeoutId);
+                    triggerTimeoutId = setTimeout(() => {
+                        if (statusMessage.innerText.includes('Waiting for camera')) {
+                            updateStatus('⚠️ Photo taking too long. Try again?', true);
+                            buttons.triggerDslr.disabled = false; // Re-enable on timeout
+                            isTriggering = false;
+                            if (btnText) btnText.textContent = 'Capture';
+                        }
+                    }, TRIGGER_TIMEOUT);
+                } else {
+                    updateStatus(`❌ ${data.error || 'Trigger failed'}`, true);
+                    buttons.triggerDslr.disabled = false; // Re-enable on error
+                    isTriggering = false;
+                    if (btnText) btnText.textContent = 'Capture';
+                }
+            } catch (err) {
+                console.error('Trigger failed:', err);
+                updateStatus('❌ Failed to trigger camera. Check console.', true);
                 buttons.triggerDslr.disabled = false; // Re-enable on error
+                isTriggering = false;
                 if (btnText) btnText.textContent = 'Capture';
             }
-        } catch (err) {
-            console.error('Trigger failed:', err);
-            updateStatus('❌ Failed to trigger camera. Check console.', true);
-            buttons.triggerDslr.disabled = false; // Re-enable on error
-            if (btnText) btnText.textContent = 'Capture';
-        }
+        };
+
+        // Start the countdown
+        runCountdown();
     }
 
     async function startSession() {
@@ -169,25 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Update status message based on remote camera status
                     const btnText = document.getElementById('capture-btn-text');
                     
-                    if (data.status && data.status !== 'Ready') {
-                        if (data.status === 'Capturing') {
-                            updateStatus('📸 Camera is capturing...', false);
-                            if (btnText) btnText.textContent = 'Snap!';
-                        } else if (data.status === 'Uploading') {
-                            updateStatus('☁️  Uploading photo...', false);
-                            if (btnText) btnText.textContent = 'Saving...';
-                        } else {
-                            updateStatus(`ℹ️  ${data.status}`, false);
-                            if (btnText) btnText.textContent = 'Busy';
-                        }
-                        // Disable button if busy
-                        buttons.triggerDslr.disabled = true;
-                    } else {
-                        // Enable button if ready
-                        buttons.triggerDslr.disabled = false;
-                        if (btnText) btnText.textContent = 'Capture';
-                    }
-
+                    // Check for new photos FIRST and prioritize enabling button
                     if (data.photos && data.photos.length > currentPhotoCount) {
                         updateGallery(data.photos);
                         currentPhotoCount = data.photos.length;
@@ -197,6 +254,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (triggerTimeoutId) {
                             clearTimeout(triggerTimeoutId);
                             triggerTimeoutId = null;
+                        }
+                        
+                        // Reset triggering state if we got a photo
+                        isTriggering = false;
+                        
+                        // FORCE ENABLE BUTTON IMMEDIATELY (Priority #1)
+                        buttons.triggerDslr.disabled = false;
+                        if (btnText) btnText.textContent = 'Capture';
+                    }
+                    
+                    // Only update status/disable button if we didn't just finish a capture
+                    // If we just got a photo, we ignore "Uploading" status from server as it might be stale
+                    const justGotPhoto = data.photos && data.photos.length > currentPhotoCount;
+                    
+                    if (!justGotPhoto) {
+                        if (data.status && data.status !== 'Ready') {
+                            if (data.status === 'Capturing') {
+                                updateStatus('📸 Camera is capturing...', false);
+                                if (btnText) btnText.textContent = 'Snap!';
+                            } else if (data.status === 'Uploading') {
+                                updateStatus('☁️  Uploading photo...', false);
+                                if (btnText) btnText.textContent = 'Saving...';
+                            } else {
+                                updateStatus(`ℹ️  ${data.status}`, false);
+                                if (btnText) btnText.textContent = 'Busy';
+                            }
+                            // Disable button if busy
+                            buttons.triggerDslr.disabled = true;
+                        } else {
+                            // Enable button if ready, but only if we are not locally busy
+                            if (!isCountingDown && !isTriggering) {
+                                buttons.triggerDslr.disabled = false;
+                                if (btnText) btnText.textContent = 'Capture';
+                            }
                         }
                     }
                 } else {
@@ -318,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         stopPolling();
+        stopCountdown(); // Stop any pending countdown
         
         try {
             updateStatus('🔄 Finishing session...', false);
@@ -344,6 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetToStart() {
         stopPolling();
+        stopCountdown(); // Stop any pending countdown
         currentSessionId = null;
         isSessionActive = false;
         currentPhotoCount = 0;

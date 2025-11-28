@@ -35,6 +35,10 @@ const watcher = chokidar.watch(WATCH_DIR, {
 });
 
 watcher.on('add', filePath => {
+  // Ignore files in subdirectories (already processed/moved)
+  const relativePath = path.relative(WATCH_DIR, filePath);
+  if (path.dirname(relativePath) !== '.') return;
+
   console.log(`📸 New photo detected: ${filePath}`);
   cameraEvents.emit('photo', filePath);
 });
@@ -151,7 +155,26 @@ async function uploadPhoto(filePath, sessionId) {
     });
     
     console.log(`✅ API Notified for session ${sessionId}`);
-    fs.unlinkSync(filePath); // Clean up temp file
+    
+    // Move file to session folder instead of deleting
+    const sessionDir = path.join(path.dirname(filePath), sessionId);
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+    }
+    const newPath = path.join(sessionDir, path.basename(filePath));
+    
+    try {
+      fs.renameSync(filePath, newPath);
+      console.log(`📂 Photo moved to ${sessionId}/${path.basename(filePath)}`);
+    } catch (err) {
+      console.error(`⚠️ Failed to move photo: ${err.message}`);
+      // If move fails, try to delete to avoid reprocessing? 
+      // But we want to keep it. 
+      // Since we ignore subdirs now, leaving it in root would cause it to be detected again if we restart?
+      // Actually, if we leave it in root, the watcher (which ignores subdirs) WILL see it.
+      // But we only emit 'photo' on 'add'. Existing files on startup are ignored by ignoreInitial: true.
+    }
+
     return response.data;
   } catch (err) {
     console.error(`❌ Upload failed: ${err.message}`);
@@ -190,15 +213,15 @@ async function main() {
                 const sessionId = sessionRes.data.sessionId;
                 console.log(`📸 Capturing for session ${sessionId}...`);
                 
-                // 1. Status: Capturing
-                await updateStatus('Capturing', sessionId);
+                // 1. Status: Uploading (Skip 'Capturing' to show progress immediately)
+                await updateStatus('Uploading', sessionId);
 
                 try {
                   const filePath = await capturePhoto(simulate);
                   console.log(`✅ Captured: ${filePath}`);
                   
-                  // 2. Status: Uploading
-                  await updateStatus('Uploading', sessionId);
+                  // 2. Status: Uploading (Already set)
+                  // await updateStatus('Uploading', sessionId);
                   
                   // If running locally with the server, let the server's watcher handle the upload
                   // to avoid double-uploading.

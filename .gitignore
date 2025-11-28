@@ -1,5 +1,5 @@
 node_modules/
-uploads/
+captured/
 *.log
 .env
 .DS_Store
