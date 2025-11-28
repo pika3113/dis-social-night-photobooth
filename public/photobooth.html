@@ -29,7 +29,7 @@
     <div id="view-session" class="view-section hidden">
       <div class="session-header">
         <div class="header-left">
-          <h1 id="session-title">Your code is <span id="active-session-code"></span></h1>
+          <h1 id="session-title">Your code is <span id="active-session-code" class="session-code"></span></h1>
         </div>
         <div class="header-right">
           <div id="status-message" class="status-badge">Ready</div>
@@ -38,15 +38,16 @@
       </div>
 
       <div class="action-buttons">
-        <button id="btn-trigger-dslr" class="btn-compact btn-capture">
-          Capture Photo
+        <button id="btn-trigger-dslr" class="btn-capture-circle">
+          <span class="btn-icon-large">📸</span>
+          <span id="capture-btn-text" class="btn-text">Capture</span>
         </button>
         <button id="btn-finish" class="btn-compact btn-finish">
           Finish Session
         </button>
       </div>
       
-      <div class="gallery-container">
+      <!-- <div class="gallery-container">
         <div class="gallery-header">
           <h3>Photos Captured</h3>
           <span id="photo-count" class="photo-count-badge">0</span>
@@ -57,7 +58,7 @@
             <p>No photos yet. Click "Capture Photo" to begin!</p>
           </div>
         </div>
-      </div>
+      </div> -->
     </div>
 
     <!-- VIEW 3: RESULT / QR -->
@@ -65,26 +66,12 @@
       <div class="result-card">
         <div class="success-icon">🎉</div>
         <h1>Session Complete!</h1>
-        <p class="result-subtitle" id="result-subtitle">Photos are ready to share</p>
-
-        <div class="qr-section">
-          <div class="qr-display">
-            <img id="qr-image" src="" alt="QR Code">
-          </div>
-          <div class="code-display">
-            <p class="code-prefix">Your code is</p>
-            <div id="session-code-display" class="session-code"></div>
-          </div>
-        </div>
+        <p class="result-subtitle" id="result-subtitle">Please check the QR code screen for your photos.</p>
 
         <div class="result-actions">
-          <a id="download-link" href="#" target="_blank" class="btn-secondary btn-medium">
-            <span class="btn-icon">🔗</span>
-            Preview Gallery
-          </a>
-          <button id="btn-done" class="btn-primary btn-medium">
+          <button id="btn-done" class="btn-primary btn-large">
             <span class="btn-icon">▶</span>
-            Next Session
+            Start Next Session
           </button>
         </div>
       </div>

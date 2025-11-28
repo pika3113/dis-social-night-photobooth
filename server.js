@@ -716,6 +716,51 @@ app.post('/api/session/finish', async (req, res) => {
   }
 });
 
+// Get last finished session
+app.get('/api/session/last-finished', async (req, res) => {
+  const sessions = Object.entries(photosDatabase).map(([id, session]) => ({
+    id,
+    ...session
+  }));
+  
+  // Filter for finished sessions (isActive === false) and sort by createdAt desc
+  const finishedSessions = sessions
+    .filter(s => s.isActive === false && s.photos && s.photos.length > 0)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  if (finishedSessions.length === 0) {
+    return res.json({ success: false, message: 'No finished sessions found' });
+  }
+
+  const lastSession = finishedSessions[0];
+  const sessionId = lastSession.id;
+
+  // Generate QR Code (same logic as in finish)
+   let baseUrl;
+    if (process.env.PUBLIC_URL) {
+      baseUrl = process.env.PUBLIC_URL.replace(/\/$/, '');
+    } else if (process.env.FORCE_VERCEL_URL === 'true') {
+      baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://dis-social-night-photobooth.vercel.app';
+    } else if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    } else {
+      const port = process.env.PORT || 3000;
+      const ip = getLocalIp();
+      baseUrl = `http://${ip}:${port}`;
+    }
+    
+    const shortUrl = `${baseUrl}/${sessionId}`;
+    const qrCodeDataUrl = await QRCode.toDataURL(shortUrl);
+
+  res.json({
+    success: true,
+    sessionId: sessionId,
+    qrCode: qrCodeDataUrl,
+    downloadUrl: shortUrl,
+    photoCount: lastSession.photos.length
+  });
+});
+
 // Upload multiple photos endpoint (Supports files OR direct URLs)
 app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
   try {
@@ -892,6 +937,11 @@ app.get('/photobooth', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'photobooth.html'));
 });
 
+// Serve QR code display at /qrcode
+app.get('/qrcode', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'qrcode.html'));
+});
+
 // Short URL redirect
 app.get('/:sessionId', async (req, res) => {
   const { sessionId } = req.params;
@@ -931,12 +981,25 @@ app.get('/:sessionId', async (req, res) => {
         return res.redirect(folder.resources[0].secure_url);
       }
       
-      return res.send(generateGalleryPage({ photos: folder.resources }, sessionId));
+      if (folder.resources.length > 0) {
+        return res.send(generateGalleryPage({ photos: folder.resources }, sessionId));
+      }
+      
+      // Session/code not found: redirect to root
+      console.log(`[INVALID] Session not found: ${sessionId}, redirecting to root`);
+      return res.redirect('/');
     }
   } catch (error) {
-    console.error('Session not found:', error);
-    res.status(404).send('Photos not found');
+    console.error('Session lookup error:', error);
+    // Redirect to root on error
+    res.redirect('/');
   }
+});
+
+// Catch-all 404 handler - redirect unknown routes to root
+app.use((req, res) => {
+  console.log(`[404] Route not found: ${req.path}, redirecting to root`);
+  res.redirect('/');
 });
 
 // Generate simple gallery page for multiple photos

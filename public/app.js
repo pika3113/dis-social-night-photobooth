@@ -44,13 +44,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (buttons.cancel) buttons.cancel.addEventListener('click', cancelSession);
 
     // Event delegation for delete buttons
-    sessionGallery.addEventListener('click', (e) => {
-        if (e.target.classList.contains('delete-btn') || e.target.closest('.delete-btn')) {
-            const btn = e.target.classList.contains('delete-btn') ? e.target : e.target.closest('.delete-btn');
-            const photoId = btn.dataset.id;
-            deletePhoto(photoId);
-        }
-    });
+    if (sessionGallery) {
+        sessionGallery.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-btn') || e.target.closest('.delete-btn')) {
+                const btn = e.target.classList.contains('delete-btn') ? e.target : e.target.closest('.delete-btn');
+                const photoId = btn.dataset.id;
+                deletePhoto(photoId);
+            }
+        });
+    }
 
     // --- Functions ---
 
@@ -80,6 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Disable button immediately
+        buttons.triggerDslr.disabled = true;
+        const btnText = document.getElementById('capture-btn-text');
+        if (btnText) btnText.textContent = 'Wait...';
+
         try {
             updateStatus('🔄 Sending trigger signal...', false);
             const res = await fetch('/api/session/trigger', { method: 'POST' });
@@ -93,14 +100,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 triggerTimeoutId = setTimeout(() => {
                     if (statusMessage.innerText.includes('Waiting for camera')) {
                         updateStatus('⚠️ Photo taking too long. Try again?', true);
+                        buttons.triggerDslr.disabled = false; // Re-enable on timeout
+                        if (btnText) btnText.textContent = 'Capture';
                     }
                 }, TRIGGER_TIMEOUT);
             } else {
                 updateStatus(`❌ ${data.error || 'Trigger failed'}`, true);
+                buttons.triggerDslr.disabled = false; // Re-enable on error
+                if (btnText) btnText.textContent = 'Capture';
             }
         } catch (err) {
             console.error('Trigger failed:', err);
             updateStatus('❌ Failed to trigger camera. Check console.', true);
+            buttons.triggerDslr.disabled = false; // Re-enable on error
+            if (btnText) btnText.textContent = 'Capture';
         }
     }
 
@@ -154,14 +167,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     isSessionActive = true;
                     
                     // Update status message based on remote camera status
+                    const btnText = document.getElementById('capture-btn-text');
+                    
                     if (data.status && data.status !== 'Ready') {
                         if (data.status === 'Capturing') {
                             updateStatus('📸 Camera is capturing...', false);
+                            if (btnText) btnText.textContent = 'Snap!';
                         } else if (data.status === 'Uploading') {
                             updateStatus('☁️  Uploading photo...', false);
+                            if (btnText) btnText.textContent = 'Saving...';
                         } else {
                             updateStatus(`ℹ️  ${data.status}`, false);
+                            if (btnText) btnText.textContent = 'Busy';
                         }
+                        // Disable button if busy
+                        buttons.triggerDslr.disabled = true;
+                    } else {
+                        // Enable button if ready
+                        buttons.triggerDslr.disabled = false;
+                        if (btnText) btnText.textContent = 'Capture';
                     }
 
                     if (data.photos && data.photos.length > currentPhotoCount) {
@@ -200,6 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateGallery(photos) {
+        if (!sessionGallery) return;
+
         if (photos.length === 0) {
             sessionGallery.innerHTML = `
                 <div class="empty-state">
@@ -250,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (photoCountBadge) photoCountBadge.textContent = currentPhotoCount;
                         
                         // Check empty state
-                        if (currentPhotoCount === 0) {
+                        if (currentPhotoCount === 0 && sessionGallery) {
                              sessionGallery.innerHTML = `
                                 <div class="empty-state">
                                     <span class="empty-icon">📷</span>
@@ -294,19 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
         stopPolling();
         
         try {
-            updateStatus('🔄 Generating QR code...', false);
+            updateStatus('🔄 Finishing session...', false);
             const res = await fetch('/api/session/finish', { method: 'POST' });
             const data = await res.json();
             
             if (data.success) {
-                qrImage.src = data.qrCode;
-                downloadLink.href = data.downloadUrl;
-                
-                // Display the 4-digit session code
-                if (sessionCodeDisplay) {
-                    sessionCodeDisplay.innerText = data.sessionId;
-                }
-                
                 // Update result subtitle
                 if (resultSubtitle) {
                     resultSubtitle.textContent = `${data.photoCount} photo${data.photoCount !== 1 ? 's' : ''} captured!`;

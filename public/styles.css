@@ -299,6 +299,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 80vh;
+  font-size: 1.4em;
 }
 
 .session-header {
@@ -307,7 +308,7 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -339,15 +340,19 @@ body {
 
 .action-buttons {
   display: flex;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: var(--spacing-lg);
   margin-top: auto;
+  margin-bottom: auto;
   padding-top: var(--spacing-md);
+  flex: 1;
 }
 
 .btn-compact {
   padding: var(--spacing-sm) var(--spacing-lg);
-  font-size: 1em;
+  font-size: 1.2em;
   font-weight: 600;
   font-family: var(--font-family);
   border: 2px solid var(--glass-border);
@@ -358,6 +363,8 @@ body {
   color: var(--text-primary);
   background: var(--glass-bg);
   backdrop-filter: blur(10px);
+  width: auto;
+  min-width: 200px;
 }
 
 .btn-compact:hover {
@@ -389,6 +396,56 @@ body {
   border-color: var(--success);
   background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(56, 142, 60, 0.25));
   box-shadow: 0 8px 20px rgba(76, 175, 80, 0.3);
+}
+
+/* Big Round Capture Circle Button */
+.btn-capture-circle {
+  width: 350px;
+  height: 350px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+  border: 4px solid rgba(102, 126, 234, 0.6);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-capture-circle .btn-icon-large {
+  font-size: 6em;
+  line-height: 1;
+}
+
+.btn-capture-circle .btn-text {
+  font-size: 1.5em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.btn-capture-circle:hover {
+  transform: scale(1.05);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.5), rgba(118, 75, 162, 0.5));
+  border-color: var(--primary-light);
+  box-shadow: 0 15px 50px rgba(102, 126, 234, 0.6);
+}
+
+.btn-capture-circle:active {
+  transform: scale(0.95);
+}
+
+.btn-capture-circle:disabled {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.2);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Gallery Container */
@@ -862,5 +919,87 @@ body {
 .delete-btn:hover {
   background: rgba(255, 0, 0, 0.9);
   transform: scale(1.1);
+}
+
+/* ============================================
+   QR CODE DISPLAY PAGE
+   ============================================ */
+
+/* QR Code page body styles */
+body.qr-page {
+  background-color: #111;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+  animation: none;
+}
+
+.qr-container {
+  background: white;
+  padding: 2rem;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  max-width: 90%;
+  width: 30%;
+}
+
+.qr-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto 1.5rem;
+  border-radius: 8px;
+}
+
+.session-code {
+  font-size: 4rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1;
+  background: #000;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+}
+
+.instruction {
+  font-size: 1.5rem;
+  color: #555;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+}
+
+.sub-instruction {
+  font-size: 1rem;
+  color: #888;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.loading {
+  color: #888;
+  font-style: italic;
+  font-size: 1.2rem;
+}
+
+.waiting-state {
+  color: #666;
+  text-align: center;
+}
+
+.waiting-state .icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.waiting-state p {
+  margin: 0.5rem 0;
 }
 
