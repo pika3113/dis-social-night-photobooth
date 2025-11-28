@@ -374,16 +374,21 @@ setInterval(async () => {
 
 // --- Session Management Endpoints ---
 
-// Trigger the camera (Watcher script picks this up OR direct execution)
-app.post('/api/session/trigger', async (req, res) => {
-  console.log('[TRIGGER] Trigger requested');
+// Helper function to trigger camera
+async function triggerCamera(sessionId) {
+  console.log(`[TRIGGER] Triggering camera for session ${sessionId}`);
+  
+  if (!sessionId) return { success: false, error: 'No session ID' };
 
-  if (!activeSessionId) {
-    return res.status(400).json({ error: 'No active session', success: false });
+  // Debounce: Prevent multiple triggers within 2 seconds
+  if (photosDatabase[sessionId]) {
+      const now = Date.now();
+      if (photosDatabase[sessionId].lastTriggerTime && (now - photosDatabase[sessionId].lastTriggerTime < 2000)) {
+          console.log(`[TRIGGER] Ignored duplicate trigger for session ${sessionId}`);
+          return { success: false, error: 'Trigger too fast' };
+      }
+      photosDatabase[sessionId].lastTriggerTime = now;
   }
-
-  let success = false;
-  let errorMsg = '';
 
   // DEV MODE: Use simulated camera
   if (DEV_MODE) {
@@ -397,29 +402,33 @@ app.post('/api/session/trigger', async (req, res) => {
         
         const uploadResult = await uploadToCloudinaryWithRetry(
           buffer,
-          activeSessionId,
+          sessionId,
           photoId
         );
 
         if (uploadResult) {
-          photosDatabase[activeSessionId].photos.push({
+          if (!photosDatabase[sessionId]) {
+             // Should not happen if session is active, but safety check
+             return { success: false, error: 'Session not found' };
+          }
+          photosDatabase[sessionId].photos.push({
             cloudinaryUrl: uploadResult.secure_url,
             cloudinaryPublicId: uploadResult.public_id,
             photoId: photoId,
             timestamp: Date.now()
           });
           saveSessions(); // Persist
-          console.log(`[OK] Photo added to session ${activeSessionId}`);
-          success = true;
+          console.log(`[OK] Photo added to session ${sessionId}`);
+          return { success: true };
         }
       } catch (err) {
         console.error(`[ERR] Failed to upload simulated photo: ${err.message}`);
-        errorMsg = err.message;
+        return { success: false, error: err.message };
       }
     } else {
       // Local: Save to filesystem (watcher will detect and upload)
       simulateCameraCapture();
-      success = true;
+      return { success: true };
     }
   }
   // PRODUCTION: Direct Execution (If running locally/Electron)
@@ -435,13 +444,15 @@ app.post('/api/session/trigger', async (req, res) => {
 
           // Determine save path
           let saveDir = CAPTURED_FOLDER;
-          if (activeSessionId) {
-            saveDir = path.join(CAPTURED_FOLDER, activeSessionId);
+          if (sessionId) {
+            saveDir = path.join(CAPTURED_FOLDER, sessionId);
             if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
           }
 
           if (process.platform === 'win32') {
             const filename = path.join(saveDir, `capture-${Date.now()}.jpg`);
+            // Use external script for Sony camera if available, else fallback
+            // For now assuming the existing logic is what we want
             const cmd = `CameraControlCmd.exe /capture /filename "${filename}"`;
             
             exec(cmd, { timeout: CAMERA_TRIGGER_TIMEOUT }, (err, stdout) => {
@@ -468,23 +479,34 @@ app.post('/api/session/trigger', async (req, res) => {
           }
         });
       });
-      success = true;
+      return { success: true };
     } catch (err) {
       console.error('[ERR] Direct trigger failed:', err);
-      errorMsg = 'Camera trigger failed';
+      return { success: false, error: 'Camera trigger failed' };
     }
   }
   // REMOTE TRIGGER: Queue command for remote camera script
   else {
     console.log('[REMOTE] Queuing remote trigger command...');
     commandQueue.push({ type: 'trigger', timestamp: Date.now() });
-    success = true;
+    return { success: true };
+  }
+  return { success: false, error: 'Unknown trigger mode' };
+}
+
+// Trigger the camera (Watcher script picks this up OR direct execution)
+app.post('/api/session/trigger', async (req, res) => {
+  console.log('[TRIGGER] Trigger requested via API');
+
+  if (!activeSessionId) {
+    return res.status(400).json({ error: 'No active session', success: false });
   }
 
-  if (success) {
+  const result = await triggerCamera(activeSessionId);
+  if (result.success) {
     res.json({ success: true });
   } else {
-    res.status(500).json({ error: errorMsg || 'Trigger failed', success: false });
+    res.status(500).json({ error: result.error || 'Trigger failed', success: false });
   }
 });
 
@@ -654,6 +676,32 @@ app.post('/api/session/status', (req, res) => {
   res.json({ success: true });
 });
 
+// Start countdown (syncs remote and display)
+app.post('/api/session/countdown', (req, res) => {
+  const { sessionId } = req.body;
+  
+  if (!sessionId || !photosDatabase[sessionId]) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  // Use SERVER time for the target, to avoid clock skew with remote devices
+  // 3s countdown + 0.5s buffer
+  const targetTime = Date.now() + 3500;
+  
+  photosDatabase[sessionId].countdownTarget = targetTime;
+  
+  // Auto-trigger camera when countdown ends
+  setTimeout(async () => {
+    if (photosDatabase[sessionId] && photosDatabase[sessionId].countdownTarget === targetTime) {
+      console.log(`[COUNTDOWN] Countdown finished for session ${sessionId}, triggering camera...`);
+      photosDatabase[sessionId].countdownTarget = null;
+      await triggerCamera(sessionId);
+    }
+  }, 3500);
+  
+  res.json({ success: true, targetTime });
+});
+
 // Get current session status (polling)
 app.get('/api/session/current', (req, res) => {
   // Allow client to specify which session they are tracking
@@ -665,11 +713,12 @@ app.get('/api/session/current', (req, res) => {
 
   const session = photosDatabase[targetSessionId];
   res.json({
-    active: true,
+    active: session.isActive,
     sessionId: targetSessionId,
     photoCount: session.photos.length,
     photos: session.photos,
-    status: session.status || 'Ready'
+    status: session.status || 'Ready',
+    countdownTarget: session.countdownTarget || null
   });
 });
 
@@ -1012,6 +1061,11 @@ app.get('/api/photo/:photoId', async (req, res) => {
 // Serve photobooth UI at /photobooth
 app.get('/photobooth', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'photobooth.html'));
+});
+
+// Serve remote trigger UI at /takephoto
+app.get('/takephoto', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'takephoto.html'));
 });
 
 // Serve QR code display at /qrcode

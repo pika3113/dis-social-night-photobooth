@@ -40,11 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners ---
 
-    buttons.start.addEventListener('click', startSession);
-    buttons.triggerDslr.addEventListener('click', triggerDslr);
-    buttons.finish.addEventListener('click', finishSession);
+    if (buttons.start) buttons.start.addEventListener('click', startSession);
+    if (buttons.triggerDslr) buttons.triggerDslr.addEventListener('click', triggerDslr);
+    if (buttons.finish) buttons.finish.addEventListener('click', finishSession);
     // "Start Next Session" should immediately start a new session, skipping the start screen
-    buttons.done.addEventListener('click', startSession); 
+    if (buttons.done) buttons.done.addEventListener('click', startSession); 
     if (buttons.cancel) buttons.cancel.addEventListener('click', cancelSession);
 
     // Event delegation for delete buttons
@@ -59,6 +59,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Functions ---
+
+    // Initialize Camera Preview
+    async function initCameraPreview() {
+        const videoEl = document.getElementById('camera-preview');
+        if (!videoEl) return;
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: 'user', // Prefer front camera
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }, 
+                audio: false 
+            });
+            videoEl.srcObject = stream;
+            console.log('📷 Camera preview started');
+        } catch (err) {
+            console.warn('⚠️ Could not start camera preview:', err);
+            // Fallback to gradient background if camera fails
+            document.body.style.background = 'linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab)';
+            document.body.style.backgroundSize = '400% 400%';
+            document.body.style.animation = 'gradientShift 15s ease infinite';
+        }
+    }
+
+    // Start camera immediately
+    initCameraPreview();
 
     function switchView(viewName) {
         Object.values(views).forEach(el => el.classList.add('hidden'));
@@ -129,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             performTrigger();
                             triggerSent = true;
                         }
-                    }, 300);
+                    }, 600);
                 }
 
                 countdown--;
@@ -192,6 +220,45 @@ document.addEventListener('DOMContentLoaded', () => {
         runCountdown();
     }
 
+    // Check for remote session start
+    async function checkForRemoteSession() {
+        try {
+            const res = await fetch('/api/session/current');
+            const data = await res.json();
+            
+            if (data.active && !isSessionActive) {
+                console.log('Remote session detected:', data.sessionId);
+                joinSession(data);
+            }
+        } catch (err) {
+            // Silent error
+        }
+    }
+
+    function joinSession(data) {
+        currentSessionId = data.sessionId;
+        isSessionActive = true;
+        lastActivityTime = Date.now();
+        currentPhotoCount = 0;
+        
+        // Display session code
+        const activeSessionCode = document.getElementById('active-session-code');
+        if (activeSessionCode) {
+            activeSessionCode.textContent = data.sessionId;
+        }
+        
+        switchView('session');
+        updateStatus('Ready', false);
+        startPolling();
+        
+        // Initial update
+        if (data.photos) {
+            updateGallery(data.photos);
+            currentPhotoCount = data.photos.length;
+            if (photoCountBadge) photoCountBadge.textContent = currentPhotoCount;
+        }
+    }
+
     async function startSession() {
         try {
             updateStatus('🔄 Starting session...', false);
@@ -244,9 +311,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Update status message based on remote camera status
                     const btnText = document.getElementById('capture-btn-text');
                     
+                    // Check for remote countdown
+                    if (data.countdownTarget) {
+                        // Calculate remaining time
+                        // We want to show 3, 2, 1. 
+                        // If remaining is 4 (due to buffer), clamp it to 3.
+                        let remaining = Math.ceil((data.countdownTarget - Date.now()) / 1000);
+                        
+                        if (remaining > 3) remaining = 3; // Clamp to 3 max
+                        
+                        if (remaining > 0) {
+                            showRemoteCountdown(remaining);
+                        } else {
+                            hideRemoteCountdown();
+                        }
+                    } else {
+                        hideRemoteCountdown();
+                    }
+
                     // Check for new photos FIRST and prioritize enabling button
                     if (data.photos && data.photos.length > currentPhotoCount) {
-                        updateGallery(data.photos);
+                        // Show the latest photo briefly
+                        const latestPhoto = data.photos[data.photos.length - 1];
+                        showLatestPhoto(latestPhoto);
+                        
+                        updateGallery(data.photos); // Keep this to update count
                         currentPhotoCount = data.photos.length;
                         updateStatus(`✅ ${currentPhotoCount} photo${currentPhotoCount !== 1 ? 's' : ''} captured!`, false);
                         
@@ -292,6 +381,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } else {
                     // Session is no longer active
+                    if (isSessionActive) {
+                        console.log('Session ended remotely');
+                        // Handle remote finish (now resets to start screen per request)
+                        finishSessionRemotely();
+                        return;
+                    }
                     isSessionActive = false;
                     
                     // Check if polling should stop (no activity timeout)
@@ -314,30 +409,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function updateGallery(photos) {
-        if (!sessionGallery) return;
-
-        if (photos.length === 0) {
-            sessionGallery.innerHTML = `
-                <div class="empty-state">
-                    <span class="empty-icon">📷</span>
-                    <p>No photos yet. Click "Capture Photo" to begin!</p>
-                </div>
-            `;
-            if (photoCountBadge) photoCountBadge.textContent = '0';
-        } else {
-            sessionGallery.innerHTML = photos.map(photo => `
-                <div class="photo-card">
-                    <img src="${photo.cloudinaryUrl}" alt="Session Photo" loading="lazy">
-                    <button class="delete-btn" data-id="${photo.photoId || photo.cloudinaryPublicId}" title="Delete Photo">×</button>
-                </div>
-            `).join('');
+    function showLatestPhoto(photo) {
+        const container = document.getElementById('latest-photo-container');
+        const img = document.getElementById('latest-photo-img');
+        
+        if (container && img && photo) {
+            img.src = photo.cloudinaryUrl;
+            container.classList.remove('hidden');
             
-            if (photoCountBadge) photoCountBadge.textContent = photos.length;
-            
-            // Scroll to bottom
-            sessionGallery.scrollTop = sessionGallery.scrollHeight;
+            // Hide after 5 seconds (updated from 3s)
+            setTimeout(() => {
+                container.classList.add('hidden');
+            }, 5000);
         }
+    }
+
+    function showRemoteCountdown(num) {
+        let container = document.getElementById('remote-countdown-overlay');
+        if (!container) {
+            // Create if missing
+            container = document.createElement('div');
+            container.id = 'remote-countdown-overlay';
+            container.className = 'countdown-overlay';
+            document.body.appendChild(container);
+        }
+        
+        // Only update if changed to prevent jitter
+        if (container.textContent !== String(num)) {
+            container.textContent = num;
+            // Reset animation
+            container.style.animation = 'none';
+            container.offsetHeight; /* trigger reflow */
+            container.style.animation = null; 
+        }
+        container.classList.remove('hidden');
+    }
+
+    function hideRemoteCountdown() {
+        const container = document.getElementById('remote-countdown-overlay');
+        if (container) {
+            container.classList.add('hidden');
+        }
+    }
+
+    function updateGallery(photos) {
+        // If we have a new photo (detected by length change in startPolling), show it briefly
+        // This function is now mostly for initial load or if we wanted to show a list
+        // But per request, we only show the latest one briefly.
+        
+        // However, updateGallery is called with ALL photos.
+        // We only want to trigger the "flash" if it's a NEW photo.
+        // The logic in startPolling handles the "new photo" check.
+        // So we can just delegate to showLatestPhoto if called from there.
+        
+        // But wait, updateGallery is also called on joinSession.
+        // We probably don't want to flash the last photo on join, only on new capture.
+        
+        // Let's modify startPolling to call showLatestPhoto directly instead of updateGallery
+        // and leave updateGallery for... actually we don't need a gallery anymore.
+        
+        if (!sessionGallery) return;
+        
+        // Update count badge
+        if (photoCountBadge) photoCountBadge.textContent = photos.length;
     }
 
     async function deletePhoto(photoId) {
@@ -434,6 +568,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function finishSessionRemotely() {
+        console.log('Session finished remotely, resetting to start screen');
+        // Per user request: Skip the result screen and go straight back to start
+        resetToStart();
+    }
+
     function resetToStart() {
         stopPolling();
         stopCountdown(); // Stop any pending countdown
@@ -444,4 +584,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatus('Ready', false);
         switchView('start');
     }
+
+    // Poll for remote session start when idle
+    checkForRemoteSession(); // Check immediately on load
+    setInterval(() => {
+        if (!isSessionActive) {
+            checkForRemoteSession();
+        }
+    }, 1000);
 });

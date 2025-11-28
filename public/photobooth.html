@@ -10,18 +10,17 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Live Camera Background -->
+  <video id="camera-preview" autoplay playsinline muted></video>
+
   <div class="operator-container">
     
     <!-- VIEW 1: START SCREEN -->
     <div id="view-start" class="view-section">
       <div class="start-card">
         <div class="icon-large">📸</div>
-        <h1>Photobooth Operator</h1>
-        <p class="subtitle">Ready to start a new session?</p>
-        <button id="btn-start" class="btn-primary btn-large">
-          <span class="btn-icon">▶</span>
-          Start New Session
-        </button>
+        <h1>Photobooth Ready</h1>
+        <p class="subtitle">Please use the mobile remote to start the experience ✨</p>
       </div>
     </div>
 
@@ -37,7 +36,7 @@
         </div>
       </div>
 
-      <div class="action-buttons">
+      <div class="action-buttons" style="display: none;">
         <button id="btn-trigger-dslr" class="btn-capture-circle">
           <span class="btn-icon-large">📸</span>
           <span id="capture-btn-text" class="btn-text">Capture</span>
@@ -47,18 +46,10 @@
         </button>
       </div>
       
-      <!-- <div class="gallery-container">
-        <div class="gallery-header">
-          <h3>Photos Captured</h3>
-          <span id="photo-count" class="photo-count-badge">0</span>
-        </div>
-        <div id="session-gallery" class="live-gallery">
-          <div class="empty-state">
-            <span class="empty-icon">📷</span>
-            <p>No photos yet. Click "Capture Photo" to begin!</p>
-          </div>
-        </div>
-      </div> -->
+      <!-- Latest Photo Overlay (Shows for 3s) -->
+      <div id="latest-photo-container" class="latest-photo-overlay hidden">
+        <img id="latest-photo-img" src="" alt="Latest Capture">
+      </div>
     </div>
 
     <!-- VIEW 3: RESULT / QR -->
