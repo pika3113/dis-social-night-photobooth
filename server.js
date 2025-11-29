@@ -17,10 +17,10 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-console.log(`[DEBUG] Cloudinary config loaded:`);
-console.log(`  - cloud_name: ${cloudinary.config().cloud_name ? '✓ SET' : '✗ MISSING'}`);
-console.log(`  - api_key: ${cloudinary.config().api_key ? '✓ SET' : '✗ MISSING'}`);
-console.log(`  - api_secret: ${cloudinary.config().api_secret ? '✓ SET' : '✗ MISSING'}`);
+// console.log(`[DEBUG] Cloudinary config loaded:`);
+console.log(`  - cloud_name: ${cloudinary.config().cloud_name ? 'SET' : 'MISSING'}`);
+console.log(`  - api_key: ${cloudinary.config().api_key ? 'SET' : 'MISSING'}`);
+console.log(`  - api_secret: ${cloudinary.config().api_secret ? 'SET' : 'MISSING'}`);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,8 +57,8 @@ const UPLOAD_RETRY_ATTEMPTS = 3; // Retry failed uploads 3 times
 const UPLOAD_RETRY_DELAY = 1000; // Wait 1s between retries
 const DEV_MODE = process.env.DEV_MODE === 'true' || process.env.DEV_MODE === 'TRUE' || process.env.DEV_MODE === '1'; // Enable simulated camera
 
-console.log(`[DEBUG] DEV_MODE env var: "${process.env.DEV_MODE}"`);
-console.log(`[DEBUG] DEV_MODE enabled: ${DEV_MODE}`);
+console.log(`[DEBUG] DEV_MODE"${process.env.DEV_MODE}"`);
+// console.log(`[DEBUG] DEV_MODE enabled: ${DEV_MODE}`);
 
 // Ensure captured folder exists (Only if not on Vercel)
 if (!process.env.VERCEL && !fs.existsSync(CAPTURED_FOLDER)) {
@@ -84,7 +84,7 @@ if (fs.existsSync(SESSIONS_FILE)) {
       if (loaded[key].uploadDate) loaded[key].uploadDate = new Date(loaded[key].uploadDate);
     }
     Object.assign(photosDatabase, loaded);
-    console.log(`[LOAD] Loaded ${Object.keys(photosDatabase).length} sessions from disk`);
+    console.log(`Loaded ${Object.keys(photosDatabase).length} sessions from disk`);
   } catch (err) {
     console.error('[ERR] Failed to load sessions:', err);
   }
@@ -1204,13 +1204,43 @@ function generateGalleryPage(session, sessionId) {
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   const server = app.listen(PORT, () => {
     const modeStr = DEV_MODE ? '🎮 DEV (Simulated)' : '🎥 PRODUCTION';
+    
+    // Get local IPv4 address
+  function getLocalIPv4() {
+    const interfaces = os.networkInterfaces();
+    const preferred = ['Wi-Fi', 'WiFi', 'wlan0', 'Ethernet', 'eth0'];
+
+    for (const name of preferred) {
+      if (interfaces[name]) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            return iface.address;
+          }
+        }
+      }
+    }
+
+    // fallback: first non-internal IPv4
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+
+    return 'localhost';
+  }
+    
     console.log(`
-╔═══════════════════════════════════════╗
-║  Photobooth Server Running            ║
-╠═══════════════════════════════════════╣
-║  URL: http://localhost:${PORT}${' '.repeat(19 - PORT.toString().length)}║
-║  Mode: ${modeStr}${' '.repeat(28 - modeStr.length)}║
-╚═══════════════════════════════════════╝
+Photobooth Server Running
+http://${getLocalIPv4()}:${PORT}${' '.repeat(19 - PORT.toString().length)}
+
+Main screen: http://${getLocalIPv4()}:${PORT}/photobooth
+chrome://flags/#unsafely-treat-insecure-origin-as-secure
+
+Qr code screen: http://${getLocalIPv4()}:${PORT}/qrcode
+Remote control: http://${getLocalIPv4()}:${PORT}/takephoto
     `);
   });
 
