@@ -29,7 +29,7 @@ const watcher = chokidar.watch(WATCH_DIR, {
   persistent: true,
   ignoreInitial: true,
   awaitWriteFinish: {
-    stabilityThreshold: 2000,
+    stabilityThreshold: 100, // Reduced to 100ms for instant detection
     pollInterval: 100
   }
 });
@@ -213,30 +213,41 @@ async function main() {
                 const sessionId = sessionRes.data.sessionId;
                 console.log(`Capturing for session ${sessionId}...`);
                 
-                // 1. Status: Uploading (Skip 'Capturing' to show progress immediately)
-                await updateStatus('Uploading', sessionId);
+                // 1. Status: Capturing
+                await updateStatus('Capturing', sessionId);
 
                 try {
                   const filePath = await capturePhoto(simulate);
                   console.log(`Captured: ${filePath}`);
                   
-                  // 2. Status: Uploading (Already set)
-                  // await updateStatus('Uploading', sessionId);
-                  
-                  // If running locally with the server, let the server's watcher handle the upload
-                  // to avoid double-uploading.
-                  if (API_URL.includes('localhost') || API_URL.includes('127.0.0.1')) {
-                    console.log('Localhost detected: Skipping remote upload (Server watcher will handle it)');
-                    // Give server a moment to process
-                    await new Promise(r => setTimeout(r, 2000));
-                  } else {
-                    await uploadPhoto(filePath, sessionId);
-                  }
-                  
-                  // 3. Status: Ready (Done)
+                  // 2. Status: Ready (Immediately allow next photo)
                   await updateStatus('Ready', sessionId);
+                  
+                  // Upload in background
+                  (async () => {
+                    try {
+                      // Check if running locally (localhost, 127.0.0.1, or local LAN IP)
+                      const localIps = Object.values(os.networkInterfaces())
+                        .flat()
+                        .filter(i => i.family === 'IPv4')
+                        .map(i => i.address);
+                      
+                      const isLocal = API_URL.includes('localhost') || 
+                                      API_URL.includes('127.0.0.1') || 
+                                      localIps.some(ip => API_URL.includes(ip));
+
+                      if (isLocal) {
+                        console.log('🏠 Local server detected: Skipping remote upload (Server watcher will handle it)');
+                      } else {
+                        await uploadPhoto(filePath, sessionId);
+                      }
+                    } catch (e) {
+                      console.error("Background upload failed", e);
+                    }
+                  })();
+
                 } catch (err) {
-                  console.error('Capture/Upload failed:', err.message);
+                  console.error('Capture failed:', err.message);
                   await updateStatus('Error', sessionId);
                 }
               } else {

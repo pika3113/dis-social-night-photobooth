@@ -242,13 +242,20 @@ function initializeFileWatcher() {
     persistent: true,
     ignoreInitial: true,
     awaitWriteFinish: {
-      stabilityThreshold: 2000,
+      stabilityThreshold: 100, // Reduced to 100ms for instant detection
       pollInterval: 100
     }
   });
 
   fileWatcher.on('add', async (filePath) => {
     console.log(`[NEW-PHOTO] Photo detected: ${path.basename(filePath)}`);
+    
+    // IMMEDIATE UNLOCK: As soon as file is detected, mark session as Ready
+    // This allows the user to take another photo while this one processes/uploads
+    if (activeSessionId && photosDatabase[activeSessionId]) {
+        console.log(`[STATUS] Forcing status to Ready for session ${activeSessionId}`);
+        photosDatabase[activeSessionId].status = 'Ready';
+    }
     
     if (!activeSessionId || !photosDatabase[activeSessionId]) {
       console.log('[WARN] No active session, skipping upload');
@@ -406,10 +413,10 @@ async function triggerCamera(sessionId) {
   
   if (!sessionId) return { success: false, error: 'No session ID' };
 
-  // Debounce: Prevent multiple triggers within 2 seconds
+  // Debounce: Prevent multiple triggers within 500ms (reduced from 2000ms)
   if (photosDatabase[sessionId]) {
       const now = Date.now();
-      if (photosDatabase[sessionId].lastTriggerTime && (now - photosDatabase[sessionId].lastTriggerTime < 2000)) {
+      if (photosDatabase[sessionId].lastTriggerTime && (now - photosDatabase[sessionId].lastTriggerTime < 500)) {
           console.log(`[TRIGGER] Ignored duplicate trigger for session ${sessionId}`);
           return { success: false, error: 'Trigger too fast' };
       }
@@ -731,7 +738,7 @@ app.post('/api/session/countdown', (req, res) => {
         if (photosDatabase[sessionId] && photosDatabase[sessionId].countdownTarget === targetTime) {
             photosDatabase[sessionId].countdownTarget = null;
         }
-      }, 850);
+      }, 200);
     }
   }, Math.max(0, COUNTDOWN_DURATION - TRIGGER_LATENCY_COMPENSATION));
   
@@ -1003,6 +1010,12 @@ app.post('/api/upload', upload.array('photos', 20), async (req, res) => {
       }));
 
     photosDatabase[sessionId].photos.push(...newPhotos);
+    
+    // Force status to Ready after upload (just in case)
+    if (photosDatabase[sessionId].isActive) {
+        photosDatabase[sessionId].status = 'Ready';
+    }
+    
     saveSessions(); // Persist
 
     // Response

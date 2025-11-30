@@ -184,6 +184,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateFinishButton();
                 }
 
+                // Unlock if server says Ready (even if photo hasn't arrived yet)
+                // But ONLY if we are not currently in a countdown
+                const isServerCountingDown = data.countdownTarget && (data.countdownTarget > Date.now());
+                
+                // Aggressive unlock: If status is Ready OR we've been triggering for > 5s
+                // Also unlock if status is 'Uploading' - we don't need to wait for upload to finish!
+                if (((data.status === 'Ready' || data.status === 'Uploading') && !isServerCountingDown) || (isTriggering && Date.now() - (triggerTimeoutId ? 0 : Date.now()) > 5000)) {
+                    if (isTriggering) {
+                        isTriggering = false;
+                        buttons.trigger.disabled = false;
+                        buttons.finish.disabled = false;
+                        if (btnText) btnText.textContent = 'Capture';
+                        updateStatus('Ready for next');
+                    }
+                }
+
                 // Update status if not locally busy
                 if (!isCountingDown && !isTriggering) {
                     // Only update text if we are not in the middle of our own countdown
@@ -191,7 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.status === 'Capturing') {
                         // updateStatus('Camera capturing...');
                     } else if (data.status === 'Uploading') {
-                        // updateStatus('Uploading...');
+                        // Don't show uploading status, just show Ready so user knows they can click
+                        updateStatus('Ready for next');
                     } else {
                         // updateStatus('Ready');
                     }
