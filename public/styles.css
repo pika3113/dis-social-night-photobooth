@@ -73,6 +73,21 @@ body {
   filter: brightness(0.6) blur(0px); /* Slight dim to make UI pop */
 }
 
+/* Border Overlay */
+#border-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/border.png');
+  background-size: 100% 100%; /* Stretch to fill */
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -1; /* Sit on top of video (which is also -1 but earlier in DOM) */
+  pointer-events: none;
+}
+
 /* Make body background transparent to show video */
 body {
   background: #000; /* Fallback */

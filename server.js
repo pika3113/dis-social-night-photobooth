@@ -9,6 +9,12 @@ const cloudinary = require('cloudinary').v2;
 const { exec } = require('child_process');
 const fs = require('fs');
 const os = require('os');
+let sharp;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  console.warn('[WARN] Sharp not found, image processing disabled');
+}
 
 // Configure Cloudinary
 cloudinary.config({
@@ -275,7 +281,27 @@ function initializeFileWatcher() {
     }
 
     try {
-      const buffer = fs.readFileSync(filePath);
+      let buffer = fs.readFileSync(filePath);
+
+      // Apply border if available
+      if (sharp) {
+        try {
+          const borderPath = path.join(__dirname, 'border.png');
+          if (fs.existsSync(borderPath)) {
+            console.log(`[PROCESS] Applying border to ${path.basename(filePath)}`);
+            buffer = await sharp(buffer)
+              .composite([{ input: borderPath }])
+              .toBuffer();
+            
+            // Overwrite local file with bordered version
+            fs.writeFileSync(filePath, buffer);
+            console.log(`[PROCESS] Border applied and saved.`);
+          }
+        } catch (err) {
+          console.error(`[WARN] Failed to apply border: ${err.message}`);
+        }
+      }
+
       const photoId = `capture_${Date.now()}`;
       
       const uploadResult = await uploadToCloudinaryWithRetry(
@@ -685,19 +711,29 @@ app.post('/api/session/countdown', (req, res) => {
   }
   
   // Use SERVER time for the target, to avoid clock skew with remote devices
-  // 3s countdown + 0.5s buffer
-  const targetTime = Date.now() + 3500;
+  const COUNTDOWN_DURATION = 3000; // 3 seconds
+  const TRIGGER_LATENCY_COMPENSATION = 750; // Trigger Xms early to account for camera lag
+  
+  const targetTime = Date.now() + COUNTDOWN_DURATION;
   
   photosDatabase[sessionId].countdownTarget = targetTime;
   
-  // Auto-trigger camera when countdown ends
+  // Auto-trigger camera when countdown ends (minus latency compensation)
   setTimeout(async () => {
     if (photosDatabase[sessionId] && photosDatabase[sessionId].countdownTarget === targetTime) {
       console.log(`[COUNTDOWN] Countdown finished for session ${sessionId}, triggering camera...`);
-      photosDatabase[sessionId].countdownTarget = null;
-      await triggerCamera(sessionId);
+      
+      // Trigger camera immediately
+      triggerCamera(sessionId);
+      
+      // Clear countdown target after 200ms delay so "1" stays visible on screen
+      setTimeout(() => {
+        if (photosDatabase[sessionId] && photosDatabase[sessionId].countdownTarget === targetTime) {
+            photosDatabase[sessionId].countdownTarget = null;
+        }
+      }, 850);
     }
-  }, 3500);
+  }, Math.max(0, COUNTDOWN_DURATION - TRIGGER_LATENCY_COMPENSATION));
   
   res.json({ success: true, targetTime });
 });
@@ -759,10 +795,12 @@ app.post('/api/session/finish', async (req, res) => {
     }
     // Option 4: Local: use LAN IP so phones can connect (Fallback)
     else {
-      const port = process.env.PORT || 3000;
-      const ip = getLocalIp();
-      baseUrl = `http://${ip}:${port}`;
-      console.log(`[QR] Generated QR code using LAN IP: ${baseUrl}`);
+      // Default to Vercel URL for QR codes even locally, as requested
+      baseUrl = 'https://dis-social-night-photobooth.vercel.app';
+      // const port = process.env.PORT || 3000;
+      // const ip = getLocalIp();
+      // baseUrl = `http://${ip}:${port}`;
+      console.log(`[QR] Generated QR code using Vercel URL: ${baseUrl}`);
     }
     
     const shortUrl = `${baseUrl}/${sessionId}`;
@@ -832,9 +870,11 @@ app.get('/api/session/last-finished', async (req, res) => {
     } else if (process.env.VERCEL_URL) {
       baseUrl = `https://${process.env.VERCEL_URL}`;
     } else {
-      const port = process.env.PORT || 3000;
-      const ip = getLocalIp();
-      baseUrl = `http://${ip}:${port}`;
+      // Default to Vercel URL for QR codes even locally, as requested
+      baseUrl = 'https://dis-social-night-photobooth.vercel.app';
+      // const port = process.env.PORT || 3000;
+      // const ip = getLocalIp();
+      // baseUrl = `http://${ip}:${port}`;
     }
     
     const shortUrl = `${baseUrl}/${sessionId}`;
@@ -1013,7 +1053,9 @@ app.get('/api/session/recent-finished', async (req, res) => {
       return res.json({ success: true, sessions: [] });
     }
 
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    // Default to Vercel URL for QR codes even locally, as requested
+    const baseUrl = 'https://dis-social-night-photobooth.vercel.app';
+    // const baseUrl = `${req.protocol}://${req.get('host')}`;
     
     // Generate QR codes for each
     const sessionsWithQr = await Promise.all(finishedSessions.map(async (session) => {

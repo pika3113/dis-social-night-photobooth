@@ -39,11 +39,11 @@ watcher.on('add', filePath => {
   const relativePath = path.relative(WATCH_DIR, filePath);
   if (path.dirname(relativePath) !== '.') return;
 
-  console.log(`📸 New photo detected: ${filePath}`);
+  console.log(`New photo detected: ${filePath}`);
   cameraEvents.emit('photo', filePath);
 });
 
-console.log(`👀 Watching for photos in: ${WATCH_DIR}`);
+// console.log(`Watching for photos in: ${WATCH_DIR}`);
 
 // Configure Cloudinary (Direct Upload)
 cloudinary.config({
@@ -56,9 +56,9 @@ cloudinary.config({
 const API_URL = process.env.API_URL || 'http://localhost:3000';
 let currentSessionId = null;
 
-console.log(`🎥 Remote Camera Script`);
-console.log(`📡 API URL: ${API_URL}`);
-console.log(`☁️  Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Configured' : 'Missing Credentials'}`);
+console.log(`Remote Camera Script`);
+// console.log(`API URL: ${API_URL}`);
+// console.log(`Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Configured' : 'Missing Credentials'}`);
 
 // Helper: Send status update to API
 async function updateStatus(status, sessionId) {
@@ -67,9 +67,9 @@ async function updateStatus(status, sessionId) {
       status,
       sessionId
     });
-    console.log(`ℹ️  Status updated: ${status}`);
+    console.log(`Status updated: ${status}`);
   } catch (err) {
-    console.error(`⚠️ Failed to update status: ${err.message}`);
+    console.error(`Failed to update status: ${err.message}`);
   }
 }
 
@@ -83,19 +83,19 @@ function capturePhoto(simulate = false) {
       
       if (fs.existsSync(testImage)) {
         fs.copyFileSync(testImage, filename);
-        console.log('🤖 [SIMULATION] Copied test image');
+        console.log('[SIMULATION] Copied test image');
         setTimeout(() => resolve(filename), 1000);
       } else {
         const minimalJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8VAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=', 'base64');
         fs.writeFileSync(filename, minimalJpeg);
-        console.log('🤖 [SIMULATION] Created minimal JPEG');
+        console.log('[SIMULATION] Created minimal JPEG');
         setTimeout(() => resolve(filename), 500);
       }
       return;
     }
 
     // REAL CAMERA (Watcher + Trigger Automation)
-    console.log('⚡ Triggering Sony Camera...');
+    console.log('Triggering camera');
     
     // 1. Set up a one-time listener for the next photo
     let photoDetected = false;
@@ -135,7 +135,7 @@ function capturePhoto(simulate = false) {
 // Upload photo directly to Cloudinary, then notify API
 async function uploadPhoto(filePath, sessionId) {
   try {
-    console.log('☁️  Uploading directly to Cloudinary...');
+    console.log('Uploading directly to Cloudinary...');
     const photoId = `capture_${Date.now()}`;
     
     // 1. Upload to Cloudinary directly
@@ -145,7 +145,7 @@ async function uploadPhoto(filePath, sessionId) {
       resource_type: 'auto'
     });
     
-    console.log(`✅ Cloudinary Upload Success: ${result.secure_url}`);
+    console.log(`Cloudinary Upload Success: ${result.secure_url}`);
 
     // 2. Notify Vercel API with the URL (lightweight request)
     const response = await axios.post(`${API_URL}/api/upload`, {
@@ -154,7 +154,7 @@ async function uploadPhoto(filePath, sessionId) {
       publicId: result.public_id
     });
     
-    console.log(`✅ API Notified for session ${sessionId}`);
+    console.log(`API Notified for session ${sessionId}`);
     
     // Move file to session folder instead of deleting
     const sessionDir = path.join(path.dirname(filePath), sessionId);
@@ -165,9 +165,9 @@ async function uploadPhoto(filePath, sessionId) {
     
     try {
       fs.renameSync(filePath, newPath);
-      console.log(`📂 Photo moved to ${sessionId}/${path.basename(filePath)}`);
+      console.log(`Photo moved to ${sessionId}/${path.basename(filePath)}`);
     } catch (err) {
-      console.error(`⚠️ Failed to move photo: ${err.message}`);
+      console.error(`Failed to move photo: ${err.message}`);
       // If move fails, try to delete to avoid reprocessing? 
       // But we want to keep it. 
       // Since we ignore subdirs now, leaving it in root would cause it to be detected again if we restart?
@@ -188,8 +188,8 @@ async function main() {
   
   if (args[0] === 'listen') {
     const simulate = args.includes('--simulate');
-    console.log(`👂 Listening for remote commands... ${simulate ? '(SIMULATION MODE)' : ''}`);
-    console.log('   (Press Ctrl+C to stop)');
+    console.log(`Listening for remote commands... ${simulate ? '(SIMULATION MODE)' : ''}`);
+    console.log('(Press Ctrl+C to stop)');
     
     // Long Polling Loop
     const pollLoop = async () => {
@@ -204,21 +204,21 @@ async function main() {
           const cmd = res.data.command;
           
           if (cmd === 'trigger') {
-            console.log('⚡ Received TRIGGER command!');
+            console.log('Received trigger command');
             
             // Get current session ID to upload to
             try {
               const sessionRes = await axios.get(`${API_URL}/api/session/current`);
               if (sessionRes.data.active) {
                 const sessionId = sessionRes.data.sessionId;
-                console.log(`📸 Capturing for session ${sessionId}...`);
+                console.log(`Capturing for session ${sessionId}...`);
                 
                 // 1. Status: Uploading (Skip 'Capturing' to show progress immediately)
                 await updateStatus('Uploading', sessionId);
 
                 try {
                   const filePath = await capturePhoto(simulate);
-                  console.log(`✅ Captured: ${filePath}`);
+                  console.log(`Captured: ${filePath}`);
                   
                   // 2. Status: Uploading (Already set)
                   // await updateStatus('Uploading', sessionId);
@@ -226,7 +226,7 @@ async function main() {
                   // If running locally with the server, let the server's watcher handle the upload
                   // to avoid double-uploading.
                   if (API_URL.includes('localhost') || API_URL.includes('127.0.0.1')) {
-                    console.log('🏠 Localhost detected: Skipping remote upload (Server watcher will handle it)');
+                    console.log('Localhost detected: Skipping remote upload (Server watcher will handle it)');
                     // Give server a moment to process
                     await new Promise(r => setTimeout(r, 2000));
                   } else {
@@ -236,22 +236,22 @@ async function main() {
                   // 3. Status: Ready (Done)
                   await updateStatus('Ready', sessionId);
                 } catch (err) {
-                  console.error('❌ Capture/Upload failed:', err.message);
+                  console.error('Capture/Upload failed:', err.message);
                   await updateStatus('Error', sessionId);
                 }
               } else {
-                console.log('⚠️ Trigger received but no active session');
+                console.log('Trigger received but no active session');
               }
             } catch (err) {
-              console.error('❌ Failed to process trigger:', err.message);
+              console.error('Failed to process trigger:', err.message);
             }
           }
           else if (cmd === 'session_start') {
-            console.log(`\n🎬 NEW SESSION STARTED: ${res.data.sessionId}`);
-            console.log('   Waiting for trigger...');
+            console.log(`\n NEW SESSION STARTED: ${res.data.sessionId}`);
+            console.log('Waiting for trigger...');
           }
           else if (cmd === 'session_finish') {
-            console.log(`\n🏁 SESSION FINISHED: ${res.data.sessionId}`);
+            console.log(`\nSESSION FINISHED: ${res.data.sessionId}`);
             console.log('   Returning to idle mode...');
           }
         } catch (err) {
@@ -275,10 +275,10 @@ async function main() {
         participants: 1
       });
       currentSessionId = response.data.sessionId;
-      console.log(`🎬 Session started: ${currentSessionId}`);
-      console.log(`💡 Use: node remote-camera.js capture ${currentSessionId}`);
+      console.log(`Session started: ${currentSessionId}`);
+      console.log(`Use: node remote-camera.js capture ${currentSessionId}`);
     } catch (err) {
-      console.error(`❌ Failed to start session: ${err.message}`);
+      console.error(`Failed to start session: ${err.message}`);
     }
   } 
   else if (args[0] === 'capture') {
@@ -291,13 +291,13 @@ async function main() {
     }
     
     try {
-      console.log('📸 Capturing photo...');
+      console.log('Capturing photo...');
       const filePath = await capturePhoto();
-      console.log(`✅ Photo captured: ${filePath}`);
+      console.log(`Photo captured: ${filePath}`);
       
       await uploadPhoto(filePath, sessionId);
     } catch (err) {
-      console.error(`❌ Error: ${err.message}`);
+      console.error(`Error: ${err.message}`);
     }
   }
   else if (args[0] === 'finish') {
@@ -313,27 +313,17 @@ async function main() {
       const response = await axios.post(`${API_URL}/api/session/finish`, {
         sessionId: sessionId
       });
-      console.log(`🏁 Session finished: ${sessionId}`);
-      console.log(`📊 Photos: ${response.data.photoCount}`);
-      console.log(`🔗 Gallery: ${response.data.downloadUrl}`);
+      console.log(`Session finished: ${sessionId}`);
+      console.log(`Photos: ${response.data.photoCount}`);
+      console.log(`Gallery: ${response.data.downloadUrl}`);
     } catch (err) {
-      console.error(`❌ Failed to finish session: ${err.message}`);
+      console.error(`Failed to finish session: ${err.message}`);
     }
   }
   else {
     console.log(`
 Usage:
-  node scripts/remote-camera.js listen [--simulate]    # Listen for web triggers (add --simulate to test without camera)
-  node scripts/remote-camera.js start-session          # Start a new session
-  node scripts/remote-camera.js capture SESSION_ID     # Capture & upload photo
-  node scripts/remote-camera.js finish SESSION_ID      # Finish session & get QR
-
-Example:
-  # Run this on the laptop connected to the camera:
   node scripts/remote-camera.js listen
-  
-  # Test without camera:
-  node scripts/remote-camera.js listen --simulate
     `);
   }
 }
